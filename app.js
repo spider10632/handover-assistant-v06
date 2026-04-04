@@ -7,7 +7,7 @@
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
-  const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "客房", "餐飲部", "待回覆信件", "公告"];
+  const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "餐飲部", "待回覆信件", "公告"];
   const SUBCATEGORY_MAP = {
     廣場: ["保留車位", "其他"],
     包裹代收: ["團體", "散客", "其他"],
