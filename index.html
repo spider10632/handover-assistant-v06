@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>工作交接助手</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
+    />
+    <link rel="stylesheet" href="styles.css?v=20260405-07" />
+  </head>
+  <body>
+    <div class="bg-shape shape-a"></div>
+    <div class="bg-shape shape-b"></div>
+
+    <div id="password-gate" class="password-gate">
+      <form id="password-form" class="password-card" autocomplete="off">
+        <p class="password-eyebrow">SECURE ACCESS</p>
+        <h1>工作交接助手</h1>
+        <p class="password-subtitle">請輸入密碼後進入系統</p>
+        <label for="password-input">進入密碼</label>
+        <input id="password-input" type="password" inputmode="numeric" placeholder="請輸入密碼" required />
+        <p id="password-error" class="password-error hidden"></p>
+        <button id="password-submit" class="btn btn-primary" type="submit">進入系統</button>
+      </form>
+    </div>
+
+    <main class="app">
+      <div class="top-panels">
+        <section class="panel animate-up delay-1">
+          <div class="today-head-row">
+            <h2 class="section-title">
+              <i class="ti ti-calendar-star title-icon" aria-hidden="true"></i>
+              <span>當日事項</span>
+            </h2>
+            <div class="today-kpi-row">
+              <span class="today-kpi-chip">當日日期：<strong id="today-auto-date">-</strong></span>
+              <label class="today-kpi-field" for="today-expected-checkin">
+                預進
+                <input id="today-expected-checkin" type="number" min="0" step="1" inputmode="numeric" placeholder="0" />
+              </label>
+              <label class="today-kpi-field" for="today-expected-checkout">
+                預退
+                <input id="today-expected-checkout" type="number" min="0" step="1" inputmode="numeric" placeholder="0" />
+              </label>
+              <label class="today-kpi-field" for="today-occupancy-rate">
+                住房率
+                <input id="today-occupancy-rate" type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="%" />
+              </label>
+            </div>
+          </div>
+
+          <div class="today-pinned-zone">
+            <p class="today-pinned-title">置頂區</p>
+            <ul id="today-pinned-list" class="today-pinned-list">
+              <li class="today-pinned-empty">目前沒有置頂事項。</li>
+            </ul>
+          </div>
+
+          <div class="today-toolbar">
+            <p id="today-task-summary" class="today-summary">今日共 0 筆事項。</p>
+            <label class="today-filter">
+              主分類
+              <select id="today-category-filter">
+                <option value="all" selected>全部主分類</option>
+                <option value="廣場">廣場</option>
+                <option value="包裹代收">包裹代收</option>
+                <option value="車輛安排">車輛安排</option>
+                <option value="大廳">大廳</option>
+                <option value="客房">客房</option>
+                <option value="餐飲部">餐飲部</option>
+                <option value="待回覆信件">待回覆信件</option>
+                <option value="公告">公告</option>
+              </select>
+            </label>
+          </div>
+
+          <ul id="today-task-list" class="today-list">
+            <li class="today-empty">今日沒有排程事項。</li>
+          </ul>
+        </section>
+
+        <section class="panel animate-up delay-2">
+          <h2 class="section-title">
+            <i class="ti ti-notes title-icon" aria-hidden="true"></i>
+            <span>新增交接待辦</span>
+          </h2>
+          <form id="task-form" class="task-form">
+            <label>
+              主分類
+              <select id="task-category" name="category" required>
+                <option value="" disabled selected>請選擇主分類</option>
+                <option value="廣場">廣場</option>
+                <option value="包裹代收">包裹代收</option>
+                <option value="車輛安排">車輛安排</option>
+                <option value="大廳">大廳</option>
+                <option value="客房">客房</option>
+                <option value="餐飲部">餐飲部</option>
+                <option value="待回覆信件">待回覆信件</option>
+                <option value="公告">公告</option>
+              </select>
+            </label>
+
+            <label>
+              子分類
+              <select id="task-subcategory" name="subcategory" disabled>
+                <option value="">請先選主分類</option>
+              </select>
+            </label>
+
+            <p id="category-tip" class="category-tip full-width">請先選主分類，再填寫其餘欄位。</p>
+
+            <label>
+              事項名稱
+              <input id="task-title" name="title" type="text" placeholder="例：房號、客人姓名、團體名稱等" required />
+            </label>
+
+            <label>
+              截止時間（可手動輸入、可留空）
+              <div class="due-input-row">
+                <input id="task-due-at" name="dueAt" type="datetime-local" />
+                <button id="all-day-btn" class="btn btn-ghost all-day-btn" type="button" aria-pressed="false">全日</button>
+              </div>
+            </label>
+
+            <label>
+              填寫人
+              <input id="task-owner" name="owner" type="text" placeholder="例：王小明" required />
+            </label>
+
+            <label class="pin-option full-width">
+              置頂顯示
+              <span class="inline-checkbox">
+                <input id="task-pinned" name="pinned" type="checkbox" />
+                <span>一直顯示在網頁上</span>
+              </span>
+            </label>
+
+            <label class="full-width">
+              交接說明
+              <textarea id="task-description" name="description" rows="3" placeholder="補充細節、檔案位置、提醒事項"></textarea>
+            </label>
+
+            <div class="form-actions full-width">
+              <button id="add-task-btn" class="btn btn-primary" type="submit">新增待辦</button>
+              <button id="clear-form-btn" class="btn btn-ghost" type="button">清空</button>
+              <button id="cancel-edit-btn" class="btn btn-ghost hidden" type="button">取消修改</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <div class="bottom-panels animate-up delay-3">
+        <section id="query-panel" class="panel panel-collapsible is-collapsed">
+          <div class="panel-heading">
+            <h2 class="section-title section-title-sm">
+              <i class="ti ti-calendar-search title-icon" aria-hidden="true"></i>
+              <span>日期查詢</span>
+            </h2>
+            <button
+              id="toggle-query-panel"
+              class="btn btn-ghost panel-toggle-btn"
+              type="button"
+              data-target="query-panel"
+              aria-expanded="false"
+            >
+              展開
+            </button>
+          </div>
+
+          <div class="panel-body">
+            <div class="query-bar">
+              <input id="query-date" type="date" />
+              <select id="query-status" aria-label="狀態篩選">
+                <option value="all" selected>全部狀態</option>
+                <option value="pending">未完成</option>
+                <option value="done">已完成</option>
+              </select>
+              <button id="search-btn" class="btn btn-secondary" type="button">查詢</button>
+              <button id="clear-search-btn" class="btn btn-ghost" type="button">清除</button>
+            </div>
+            <p id="query-result-text" class="query-result">目前顯示全部待辦。</p>
+          </div>
+        </section>
+
+        <section id="task-list-panel" class="panel panel-collapsible is-collapsed">
+          <div class="panel-heading">
+            <h2 class="section-title section-title-sm">
+              <i class="ti ti-list-details title-icon" aria-hidden="true"></i>
+              <span>待辦清單</span>
+            </h2>
+            <div class="panel-heading-right">
+              <label class="inline-filter" for="task-list-filter">
+                篩選
+                <select id="task-list-filter" aria-label="待辦清單篩選">
+                  <option value="all" selected>全部</option>
+                  <option value="pending">未完成</option>
+                  <option value="done">已完成</option>
+                  <option value="pinned">置頂中</option>
+                </select>
+              </label>
+              <button
+                id="toggle-task-list-panel"
+                class="btn btn-ghost panel-toggle-btn"
+                type="button"
+                data-target="task-list-panel"
+                aria-expanded="false"
+              >
+                展開
+              </button>
+            </div>
+          </div>
+
+          <div class="panel-body">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>狀態</th>
+                    <th>置頂</th>
+                    <th>主分類</th>
+                    <th>子分類</th>
+                    <th>事項</th>
+                    <th>填寫人</th>
+                    <th>完成人</th>
+                    <th>截止時間</th>
+                    <th>交接說明</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="task-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel export-panel animate-up delay-4">
+        <div class="export-actions">
+          <label class="export-filter">
+            匯出日期
+            <input id="export-date" type="date" />
+          </label>
+          <label class="export-filter">
+            匯出狀態
+            <select id="export-status">
+              <option value="all" selected>全部狀態</option>
+              <option value="pending">未完成</option>
+              <option value="done">已完成</option>
+            </select>
+          </label>
+          <button id="export-word-btn" class="btn btn-primary" type="button">一鍵生成 Word</button>
+        </div>
+      </section>
+    </main>
+
+    <div class="app-version">VERSION 0.6</div>
+
+    <aside id="upcoming-board" class="upcoming-board" aria-live="polite">
+      <h3>下一件待辦提醒</h3>
+      <p id="upcoming-summary" class="upcoming-summary">目前沒有 1 小時內待辦。</p>
+      <ul id="upcoming-task-list" class="upcoming-task-list">
+        <li class="upcoming-empty">30 分鐘與 1 小時提醒區目前無待辦。</li>
+      </ul>
+      <div class="reminder-controls">
+        <label class="checkbox">
+          <input id="notification-toggle" type="checkbox" checked />
+          啟用瀏覽器通知
+        </label>
+        <button id="request-notification-btn" class="btn btn-secondary" type="button">授權通知</button>
+      </div>
+    </aside>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js" defer></script>
+    <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js" defer></script>
+    <script src="app.js?v=20260405-07" defer></script>
+  </body>
+</html>
