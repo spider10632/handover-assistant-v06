@@ -1214,22 +1214,52 @@
     els.addTaskBtn.textContent = "儲存修改";
     els.cancelEditBtn.classList.remove("hidden");
     updateFormLockState();
-    const editPanel = els.taskForm && typeof els.taskForm.closest === "function" ? els.taskForm.closest(".panel") : null;
-    if (editPanel && typeof editPanel.scrollIntoView === "function") {
-      const prefersReducedMotion =
-        typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      editPanel.scrollIntoView({
-        behavior: prefersReducedMotion ? "auto" : "smooth",
-        block: "start",
-      });
-    }
+    scrollToTaskFormPanel();
     if (els.taskTitle && typeof els.taskTitle.focus === "function") {
-      els.taskTitle.focus({ preventScroll: true });
+      try {
+        els.taskTitle.focus();
+      } catch (error) {
+        // ignore unsupported focus options in older browsers
+      }
       if (typeof els.taskTitle.select === "function") {
         els.taskTitle.select();
       }
     }
     showToast("已載入待辦，可開始修改。");
+  }
+
+  function scrollToTaskFormPanel() {
+    const panel = els.taskForm && typeof els.taskForm.closest === "function" ? els.taskForm.closest(".panel") : null;
+    if (!panel) {
+      return;
+    }
+    const prefersReducedMotion =
+      typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const behavior = prefersReducedMotion ? "auto" : "smooth";
+    const panelTop = panel.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0);
+    const targetTop = Math.max(0, Math.floor(panelTop - 18));
+
+    try {
+      window.scrollTo({ top: targetTop, behavior: behavior });
+    } catch (error) {
+      window.scrollTo(0, targetTop);
+    }
+
+    // Some desktop browsers ignore smooth scrolling in busy layouts; enforce once more.
+    setTimeout(function () {
+      const rect = panel.getBoundingClientRect();
+      const outOfView = rect.top < 0 || rect.top > window.innerHeight * 0.35;
+      if (!outOfView) {
+        return;
+      }
+      const top = panel.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0);
+      const retryTop = Math.max(0, Math.floor(top - 18));
+      try {
+        window.scrollTo({ top: retryTop, behavior: "auto" });
+      } catch (error) {
+        window.scrollTo(0, retryTop);
+      }
+    }, 180);
   }
 
   function cancelEditing() {
