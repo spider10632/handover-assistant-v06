@@ -1214,6 +1214,21 @@
     els.addTaskBtn.textContent = "儲存修改";
     els.cancelEditBtn.classList.remove("hidden");
     updateFormLockState();
+    const editPanel = els.taskForm && typeof els.taskForm.closest === "function" ? els.taskForm.closest(".panel") : null;
+    if (editPanel && typeof editPanel.scrollIntoView === "function") {
+      const prefersReducedMotion =
+        typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      editPanel.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+    if (els.taskTitle && typeof els.taskTitle.focus === "function") {
+      els.taskTitle.focus({ preventScroll: true });
+      if (typeof els.taskTitle.select === "function") {
+        els.taskTitle.select();
+      }
+    }
     showToast("已載入待辦，可開始修改。");
   }
 
