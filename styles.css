@@ -817,19 +817,6 @@ td {
   padding-bottom: 14px;
 }
 
-.backup-actions {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.backup-status {
-  font-size: 0.82rem;
-  color: #5b615a;
-}
-
 .reminder-controls {
   margin-top: 10px;
   display: flex;
@@ -1127,15 +1114,6 @@ td {
 
   .export-actions {
     grid-template-columns: 1fr;
-  }
-
-  .backup-actions {
-    width: 100%;
-  }
-
-  .backup-status {
-    width: 100%;
-    text-align: left;
   }
 
   .reminder-controls .btn {

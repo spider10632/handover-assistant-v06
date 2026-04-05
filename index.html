@@ -167,7 +167,7 @@
       </div>
 
       <div class="bottom-panels animate-up delay-3">
-        <section id="query-panel" class="panel panel-collapsible is-collapsed">
+        <section id="query-panel" class="panel panel-collapsible">
           <div class="panel-heading">
             <h2 class="section-title section-title-sm">
               <i class="ti ti-calendar-search title-icon" aria-hidden="true"></i>
@@ -178,9 +178,9 @@
               class="btn btn-ghost panel-toggle-btn"
               type="button"
               data-target="query-panel"
-              aria-expanded="false"
+              aria-expanded="true"
             >
-              展開
+              收合
             </button>
           </div>
 
@@ -203,12 +203,12 @@
           <div class="panel-heading">
             <h2 class="section-title section-title-sm">
               <i class="ti ti-list-details title-icon" aria-hidden="true"></i>
-              <span>待辦清單</span>
+              <span>查詢結果</span>
             </h2>
             <div class="panel-heading-right">
               <label class="inline-filter" for="task-list-filter">
                 篩選
-                <select id="task-list-filter" aria-label="待辦清單篩選">
+                <select id="task-list-filter" aria-label="查詢結果篩選">
                   <option value="all" selected>全部</option>
                   <option value="pending">未完成</option>
                   <option value="done">已完成</option>
@@ -267,15 +267,10 @@
           </label>
           <button id="export-word-btn" class="btn btn-primary" type="button">一鍵生成 Word</button>
         </div>
-        <div class="backup-actions">
-          <button id="save-data-btn" class="btn btn-secondary" type="button">一鍵儲存資料</button>
-          <button id="load-data-btn" class="btn btn-ghost" type="button">讀取資料庫</button>
-          <input id="load-data-input" class="hidden" type="file" accept=".json,application/json" />
-        </div>
       </section>
     </main>
 
-    <div class="app-version">VERSION 0.7</div>
+    <div class="app-version">VERSION 0.8</div>
 
     <aside id="upcoming-board" class="upcoming-board" aria-live="polite">
       <h3>下一件待辦提醒</h3>
@@ -299,6 +294,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260405-22" defer></script>
+    <script src="app.js?v=20260405-23" defer></script>
   </body>
 </html>

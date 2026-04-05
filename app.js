@@ -22,7 +22,7 @@
   const CLOUD_PUSH_DEBOUNCE_MS = 1200;
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
   const BACKUP_TYPE = "handover-backup";
-  const BACKUP_VERSION = "0.7";
+  const BACKUP_VERSION = "0.8";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
@@ -51,7 +51,6 @@
     editingTaskId: null,
     reminderTimer: null,
     countdownTimer: null,
-    autoSaveFileHandle: null,
     currentServerId: null,
     cloudInitDone: false,
     cloudPushTimer: null,
@@ -536,9 +535,6 @@
     els.requestNotificationBtn = document.getElementById("request-notification-btn");
     els.exportDate = document.getElementById("export-date");
     els.exportStatus = document.getElementById("export-status");
-    els.saveDataBtn = document.getElementById("save-data-btn");
-    els.loadDataBtn = document.getElementById("load-data-btn");
-    els.loadDataInput = document.getElementById("load-data-input");
     els.taskListFilter = document.getElementById("task-list-filter");
     els.todayAutoDate = document.getElementById("today-auto-date");
     els.todayExpectedCheckin = document.getElementById("today-expected-checkin");
@@ -581,15 +577,6 @@
     els.todayCategoryFilter.addEventListener("change", handleTodayCategoryChange);
     els.exportWordBtn.addEventListener("click", handleExportWord);
     els.requestNotificationBtn.addEventListener("click", requestNotificationPermission);
-    if (els.saveDataBtn) {
-      els.saveDataBtn.addEventListener("click", handleSaveData);
-    }
-    if (els.loadDataBtn) {
-      els.loadDataBtn.addEventListener("click", handleLoadDataClick);
-    }
-    if (els.loadDataInput) {
-      els.loadDataInput.addEventListener("change", handleLoadDataChange);
-    }
     if (els.panelToggleButtons.length > 0) {
       els.panelToggleButtons.forEach(function (btn) {
         btn.addEventListener("click", handlePanelToggle);
@@ -694,6 +681,26 @@
     }
     panel.classList.toggle("is-collapsed");
     updatePanelToggleButton(btn, panel);
+  }
+
+  function setPanelCollapsed(panelId, collapsed) {
+    const targetId = String(panelId || "").trim();
+    if (!targetId) {
+      return;
+    }
+    const panel = document.getElementById(targetId);
+    if (!panel) {
+      return;
+    }
+    if (collapsed) {
+      panel.classList.add("is-collapsed");
+    } else {
+      panel.classList.remove("is-collapsed");
+    }
+    const btn = document.querySelector('.panel-toggle-btn[data-target="' + targetId + '"]');
+    if (btn) {
+      updatePanelToggleButton(btn, panel);
+    }
   }
 
   function updatePanelToggleButton(btn, panel) {
@@ -1045,6 +1052,7 @@
     if (els.queryStatus) {
       els.queryStatus.value = state.queryStatus;
     }
+    setPanelCollapsed("task-list-panel", false);
     renderAll();
   }
 
@@ -1681,217 +1689,6 @@
     showToast("Exported via compatibility Word mode.");
   }
 
-  async function handleSaveData() {
-    if (canUseFileSystemAccessApi()) {
-      try {
-        let handle = state.autoSaveFileHandle;
-        if (!handle) {
-          handle = await window.showSaveFilePicker(buildBackupPickerOptions());
-        }
-        const ok = await writeBackupToFileHandle(handle, true);
-        if (!ok) {
-          showToast("儲存失敗，請確認檔案權限。");
-          return;
-        }
-        state.autoSaveFileHandle = handle;
-        showToast("已儲存並覆蓋原本檔案。");
-        return;
-      } catch (error) {
-        if (error && error.name === "AbortError") {
-          return;
-        }
-        console.error("handleSaveData (overwrite) error", error);
-      }
-    }
-    try {
-      const filename = buildBackupFileName();
-      downloadBackupFile(filename);
-      showToast("已下載備份檔。");
-    } catch (error) {
-      console.error("handleSaveData error", error);
-      showToast("儲存資料失敗。");
-    }
-  }
-
-  function canUseFileSystemAccessApi() {
-    return typeof window.showSaveFilePicker === "function" && window.isSecureContext;
-  }
-
-  async function writeBackupToFileHandle(handle, allowPermissionPrompt) {
-    if (!handle || typeof handle.createWritable !== "function") {
-      return false;
-    }
-    const granted = await ensureFileHandlePermission(handle, allowPermissionPrompt);
-    if (!granted) {
-      return false;
-    }
-    try {
-      let merged = {
-        tasks: state.tasks,
-        todayOverview: state.todayOverview,
-        deletedTaskIds: state.deletedTaskIds,
-      };
-
-      if (typeof handle.getFile === "function") {
-        try {
-          const currentFile = await handle.getFile();
-          const currentText = await currentFile.text();
-          if (currentText) {
-            const parsed = JSON.parse(currentText);
-            const existing = parseBackupPayload(parsed);
-            const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
-            if (existing && existing.serverId === currentServerId) {
-              merged = mergeBackupState(merged, existing);
-            }
-          }
-        } catch (error) {
-          console.error("merge existing backup before write failed", error);
-        }
-      }
-
-      const payload = {
-        type: BACKUP_TYPE,
-        version: BACKUP_VERSION,
-        serverId: state.currentServerId || DEFAULT_SERVER_ID,
-        exportedAt: new Date().toISOString(),
-        tasks: merged.tasks.slice(),
-        deletedTaskIds: normalizeDeletedTaskIds(merged.deletedTaskIds),
-        todayOverview: {
-          checkin: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkin),
-          checkout: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkout),
-          occupancy: normalizeOccupancyRateValue(merged.todayOverview && merged.todayOverview.occupancy),
-        },
-      };
-
-      const json = JSON.stringify(payload, null, 2);
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-      applyImportedBackup(merged, true);
-      return true;
-    } catch (error) {
-      console.error("writeBackupToFileHandle error", error);
-      return false;
-    }
-  }
-
-  function buildBackupPickerOptions() {
-    const serverId = state.currentServerId || DEFAULT_SERVER_ID;
-    return {
-      suggestedName: "handover_" + serverId + ".json",
-      types: [
-        {
-          description: "JSON",
-          accept: {
-            "application/json": [".json"],
-          },
-        },
-      ],
-    };
-  }
-
-  async function ensureFileHandlePermission(handle, allowPermissionPrompt) {
-    if (!handle || typeof handle.queryPermission !== "function") {
-      return true;
-    }
-    try {
-      const query = await handle.queryPermission({ mode: "readwrite" });
-      if (query === "granted") {
-        return true;
-      }
-      if (!allowPermissionPrompt || typeof handle.requestPermission !== "function") {
-        return false;
-      }
-      const request = await handle.requestPermission({ mode: "readwrite" });
-      return request === "granted";
-    } catch (error) {
-      return false;
-    }
-  }
-
-
-  function handleLoadDataClick() {
-    if (!els.loadDataInput) {
-      return;
-    }
-    els.loadDataInput.value = "";
-    els.loadDataInput.click();
-  }
-
-  async function handleLoadDataChange(event) {
-    const input = event && event.target ? event.target : null;
-    const file = input && input.files && input.files[0] ? input.files[0] : null;
-    if (!file) {
-      return;
-    }
-    try {
-      const raw = await file.text();
-      const parsed = JSON.parse(raw);
-      const imported = parseBackupPayload(parsed);
-      if (!imported) {
-        showToast("資料格式不正確。");
-        return;
-      }
-      const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
-      if (imported.serverId !== currentServerId) {
-        showToast("此資料檔不屬於目前伺服器。");
-        return;
-      }
-      const merged = mergeBackupState(
-        {
-          tasks: state.tasks,
-          todayOverview: state.todayOverview,
-          deletedTaskIds: state.deletedTaskIds,
-        },
-        imported,
-      );
-      const changed = applyImportedBackup(merged, false);
-      if (!changed) {
-        showToast("資料已是最新。");
-      }
-    } catch (error) {
-      console.error("handleLoadDataChange error", error);
-      showToast("讀取資料失敗。");
-    } finally {
-      if (input) {
-        input.value = "";
-      }
-    }
-  }
-
-  function downloadBackupFile(filename) {
-    const payload = buildBackupPayload();
-    const json = JSON.stringify(payload, null, 2);
-    const blob = new Blob([json], { type: "application/json;charset=utf-8" });
-    if (window.saveAs) {
-      window.saveAs(blob, filename);
-      return;
-    }
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(link.href);
-  }
-
-  function buildBackupPayload() {
-    return {
-      type: BACKUP_TYPE,
-      version: BACKUP_VERSION,
-      serverId: state.currentServerId || DEFAULT_SERVER_ID,
-      exportedAt: new Date().toISOString(),
-      tasks: state.tasks.slice(),
-      deletedTaskIds: normalizeDeletedTaskIds(state.deletedTaskIds),
-      todayOverview: {
-        checkin: state.todayOverview.checkin || "",
-        checkout: state.todayOverview.checkout || "",
-        occupancy: state.todayOverview.occupancy || "",
-      },
-    };
-  }
-
   function applyImportedBackup(imported, silent) {
     if (!imported || typeof imported !== "object") {
       return false;
@@ -1951,15 +1748,6 @@
       },
       deletedTaskIds: filtered.deletedTaskIds,
     };
-  }
-
-  function buildBackupFileName() {
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
-    const ss = String(now.getSeconds()).padStart(2, "0");
-    const serverId = state.currentServerId || DEFAULT_SERVER_ID;
-    return "handover_" + serverId + "_backup_" + toDateKey(now) + "_" + hh + mm + ss + ".json";
   }
 
   async function exportDocx(tasks, conditionText, exportDate, exportStatus) {
