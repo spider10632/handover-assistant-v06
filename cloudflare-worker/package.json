@@ -1,0 +1,14 @@
+{
+  "name": "handover-cloud-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create handover-db",
+    "db:migrate": "wrangler d1 execute handover-db --file=schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.10.0"
+  }
+}

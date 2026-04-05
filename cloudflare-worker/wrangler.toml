@@ -1,0 +1,12 @@
+name = "handover-cloud-api"
+main = "src/index.js"
+compatibility_date = "2026-04-05"
+workers_dev = true
+
+[vars]
+ALLOWED_USERS = "caesarmetro"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "handover-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

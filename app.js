@@ -8,26 +8,32 @@
     caesarmetro: {
       serverId: "caesarmetro",
       displayName: "caesarmetro",
-      cloudBucket: "7cWAAYbjUk95gHksRVkTp3",
-      cloudKey: "handover-assistant-v07-caesarmetro",
+      cloudApiBase: "",
+      legacyKvdbBucket: "7cWAAYbjUk95gHksRVkTp3",
+      legacyKvdbKey: "handover-assistant-v07-caesarmetro",
     },
   });
   const DEFAULT_SERVER_ID = "caesarmetro";
-  const CLOUD_API_BASE = "https://kvdb.io";
+  const CLOUD_API_BASE_OVERRIDE =
+    typeof window !== "undefined" && typeof window.HANDOVER_CLOUD_API_BASE === "string"
+      ? window.HANDOVER_CLOUD_API_BASE.trim()
+      : "";
   const CLOUD_REQUEST_TIMEOUT_MS = 12000;
   const CLOUD_PUSH_DEBOUNCE_MS = 1200;
+  const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
   const BACKUP_TYPE = "handover-backup";
   const BACKUP_VERSION = "0.7";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
-  const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "餐飲部", "待回覆信件", "公告"];
+  const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "預訂", "餐飲部", "待回覆信件", "公告"];
   const SUBCATEGORY_MAP = {
     廣場: ["保留車位", "其他"],
     包裹代收: ["團體", "散客", "其他"],
     車輛安排: ["禮賓車", "計程車", "其他"],
     大廳: ["行李寄放", "其他"],
-    客房: ["下行李", "房務相關事項", "其他"],
+    客房: ["下行李", "房務相關事項", "送房", "佈置", "其他"],
+    預訂: ["餐廳", "車票", "其他"],
   };
 
   const state = {
@@ -152,17 +158,95 @@
     return server && typeof server === "object" ? server : null;
   }
 
-  function getCurrentCloudUrl() {
-    const server = getCurrentServerConfig();
-    if (!server || !server.cloudBucket || !server.cloudKey) {
+  function normalizeCloudApiBase(baseUrl) {
+    return String(baseUrl || "")
+      .trim()
+      .replace(/\/+$/, "");
+  }
+
+  function getCloudApiBase(server) {
+    const overrideBase = normalizeCloudApiBase(CLOUD_API_BASE_OVERRIDE);
+    if (overrideBase) {
+      return overrideBase;
+    }
+    return normalizeCloudApiBase(server && server.cloudApiBase);
+  }
+
+  function buildCloudStateUrl(baseUrl, serverId) {
+    const base = normalizeCloudApiBase(baseUrl);
+    if (!base || !serverId) {
       return "";
     }
-    return CLOUD_API_BASE + "/" + encodeURIComponent(server.cloudBucket) + "/" + encodeURIComponent(server.cloudKey);
+    return base + "/v1/state/" + encodeURIComponent(serverId);
+  }
+
+  function getCurrentCloudUrl() {
+    const server = getCurrentServerConfig();
+    if (!server) {
+      return "";
+    }
+    const cloudBase = getCloudApiBase(server);
+    return buildCloudStateUrl(cloudBase, server.serverId);
+  }
+
+  function getLegacyKvdbUrl(server) {
+    if (!server || !server.legacyKvdbBucket || !server.legacyKvdbKey) {
+      return "";
+    }
+    return (
+      "https://kvdb.io/" +
+      encodeURIComponent(server.legacyKvdbBucket) +
+      "/" +
+      encodeURIComponent(server.legacyKvdbKey)
+    );
+  }
+
+  function getLegacyMigrationFlagKey(serverId) {
+    const id = String(serverId || DEFAULT_SERVER_ID).trim() || DEFAULT_SERVER_ID;
+    return LEGACY_MIGRATION_DONE_KEY + "__" + id;
+  }
+
+  function hasMigratedLegacyKvdb(serverId) {
+    try {
+      return localStorage.getItem(getLegacyMigrationFlagKey(serverId)) === "1";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function markLegacyMigrationDone(serverId) {
+    try {
+      localStorage.setItem(getLegacyMigrationFlagKey(serverId), "1");
+    } catch (error) {
+      // ignore quota/private mode write failure
+    }
+  }
+
+  function extractCloudPayload(data) {
+    if (!data || typeof data !== "object") {
+      return null;
+    }
+    if (data.payload && typeof data.payload === "object") {
+      return data.payload;
+    }
+    if (data.data && typeof data.data === "object") {
+      return data.data;
+    }
+    return data;
   }
 
   async function initCloudSync() {
+    const url = getCurrentCloudUrl();
+    if (!url) {
+      state.cloudInitDone = true;
+      showToast("尚未設定 Cloudflare API，暫用本機資料。");
+      return;
+    }
     try {
-      await pullCloudBackupAndMerge();
+      const foundCloudData = await pullCloudBackupAndMerge();
+      if (!foundCloudData) {
+        await migrateLegacyKvdbToCloud();
+      }
       state.cloudInitDone = true;
       await pushCloudBackupNow();
       showToast("已連線雲端資料庫。");
@@ -175,6 +259,50 @@
         showToast("雲端連線失敗，暫用本機資料。");
       }
     }
+  }
+
+  async function migrateLegacyKvdbToCloud() {
+    const server = getCurrentServerConfig();
+    const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
+    if (hasMigratedLegacyKvdb(currentServerId)) {
+      return false;
+    }
+    const legacyUrl = getLegacyKvdbUrl(server);
+    if (!legacyUrl) {
+      markLegacyMigrationDone(currentServerId);
+      return false;
+    }
+    const response = await fetchWithTimeout(legacyUrl, { method: "GET", cache: "no-store" }, CLOUD_REQUEST_TIMEOUT_MS);
+    if (response.status === 404) {
+      markLegacyMigrationDone(currentServerId);
+      return false;
+    }
+    if (!response.ok) {
+      throw new Error("legacy kvdb pull failed: " + response.status);
+    }
+    const raw = await response.text();
+    if (!raw) {
+      markLegacyMigrationDone(currentServerId);
+      return false;
+    }
+    const parsed = JSON.parse(raw);
+    const imported = parseBackupPayload(extractCloudPayload(parsed));
+    if (!imported || imported.serverId !== currentServerId) {
+      markLegacyMigrationDone(currentServerId);
+      return false;
+    }
+    const merged = mergeBackupState(
+      {
+        tasks: state.tasks,
+        todayOverview: state.todayOverview,
+        deletedTaskIds: state.deletedTaskIds,
+      },
+      imported,
+    );
+    applyImportedBackup(merged, true);
+    markLegacyMigrationDone(currentServerId);
+    showToast("已完成 kvdb 舊資料搬移。");
+    return true;
   }
 
   async function pullCloudBackupAndMerge() {
@@ -194,7 +322,7 @@
       return false;
     }
     const parsed = JSON.parse(raw);
-    const imported = parseBackupPayload(parsed);
+    const imported = parseBackupPayload(extractCloudPayload(parsed));
     if (!imported) {
       return false;
     }
@@ -208,9 +336,10 @@
         todayOverview: state.todayOverview,
         deletedTaskIds: state.deletedTaskIds,
       },
-      imported,
-    );
-    return applyImportedBackup(merged, true);
+        imported,
+      );
+    applyImportedBackup(merged, true);
+    return true;
   }
 
   function scheduleCloudPush(delayMs) {
@@ -251,7 +380,7 @@
         const existingRaw = await existingResponse.text();
         if (existingRaw) {
           const existingParsed = JSON.parse(existingRaw);
-          const imported = parseBackupPayload(existingParsed);
+          const imported = parseBackupPayload(extractCloudPayload(existingParsed));
           if (imported && imported.serverId === currentServerId) {
             merged = mergeBackupState(merged, imported);
           }
@@ -379,6 +508,7 @@
     els.categoryTip = document.getElementById("category-tip");
     els.taskTitle = document.getElementById("task-title");
     els.taskOwner = document.getElementById("task-owner");
+    els.taskDate = document.getElementById("task-date");
     els.taskStartAt = document.getElementById("task-start-at");
     els.taskEndAt = document.getElementById("task-end-at");
     els.allDayBtn = document.getElementById("all-day-btn");
@@ -475,6 +605,9 @@
 
   function setDefaultDueTime() {
     setAllDayMode(false);
+    if (els.taskDate) {
+      els.taskDate.value = toDateKey(new Date());
+    }
     els.taskStartAt.value = "";
     els.taskEndAt.value = "";
   }
@@ -484,11 +617,12 @@
       if (!input) {
         return;
       }
-      if (input.type === "text") {
-        input.setAttribute("inputmode", "numeric");
-        input.setAttribute("placeholder", "YYYY-MM-DD HH:mm");
-        input.setAttribute("maxlength", "16");
-        input.setAttribute("pattern", "\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}");
+      if (input.type === "time") {
+        input.setAttribute("step", "60");
+        input.removeAttribute("inputmode");
+        input.removeAttribute("maxlength");
+        input.removeAttribute("pattern");
+        input.removeAttribute("placeholder");
       } else if (input.type === "date") {
         input.removeAttribute("inputmode");
         input.removeAttribute("maxlength");
@@ -576,43 +710,76 @@
     const next = Boolean(enabled);
     const currentStart = String(els.taskStartAt.value || "").trim();
     const currentEnd = String(els.taskEndAt.value || "").trim();
+    const currentDate = String(els.taskDate ? els.taskDate.value || "" : "").trim();
     state.formAllDay = next;
 
     els.allDayBtn.setAttribute("aria-pressed", next ? "true" : "false");
     els.allDayBtn.classList.toggle("active", next);
     els.allDayBtn.textContent = next ? "全日中" : "全日";
-    els.taskStartAt.type = next ? "date" : "text";
-    els.taskEndAt.type = next ? "date" : "text";
+    els.taskStartAt.type = next ? "date" : "time";
+    els.taskEndAt.type = next ? "date" : "time";
+    if (els.taskDate) {
+      els.taskDate.disabled = next;
+      if (!next && !els.taskDate.value) {
+        els.taskDate.value =
+          normalizeDateInputFromAny(currentDate) ||
+          normalizeDateInputFromAny(currentStart) ||
+          normalizeDateInputFromAny(currentEnd) ||
+          toDateKey(new Date());
+      }
+    }
     apply24HourInputMode();
 
-    els.taskStartAt.value = normalizeRangeInputValue(currentStart, next, "start");
-    els.taskEndAt.value = normalizeRangeInputValue(currentEnd, next, "end");
+    if (next) {
+      const baseDate =
+        normalizeDateInputFromAny(currentDate) ||
+        normalizeDateInputFromAny(currentStart) ||
+        normalizeDateInputFromAny(currentEnd) ||
+        toDateKey(new Date());
+      els.taskStartAt.value = normalizeDateInputFromAny(currentStart) || baseDate;
+      els.taskEndAt.value = normalizeDateInputFromAny(currentEnd) || baseDate;
+      return;
+    }
+    els.taskStartAt.value = normalizeTimeInputFromAny(currentStart, "start");
+    els.taskEndAt.value = normalizeTimeInputFromAny(currentEnd, "end");
   }
 
-  function normalizeRangeInputValue(value, allDay, part) {
+  function normalizeDateInputFromAny(value) {
     const currentValue = String(value || "").trim();
     if (!currentValue) {
       return "";
     }
-    if (allDay) {
-      const normalizedDate = currentValue.replace(/\//g, "-");
-      if (normalizedDate.includes("T")) {
-        return normalizedDate.slice(0, 10);
+    const normalizedDate = currentValue.replace(/\//g, "-");
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(normalizedDate)) {
+      return normalizedDate.slice(0, 10);
+    }
+    const parsedMs = new Date(normalizedDate).getTime();
+    if (!Number.isNaN(parsedMs)) {
+      return toDateKey(new Date(parsedMs));
+    }
+    return "";
+  }
+
+  function normalizeTimeInputFromAny(value, part) {
+    const currentValue = String(value || "").trim();
+    if (!currentValue) {
+      return "";
+    }
+    const direct = currentValue.match(/^(\d{1,2}):(\d{2})$/);
+    if (direct) {
+      const hh = Number(direct[1]);
+      const mm = Number(direct[2]);
+      if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+        return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
       }
-      if (normalizedDate.includes(" ")) {
-        return normalizedDate.slice(0, 10);
-      }
-      return normalizedDate;
     }
 
     const parsedMs = parseTaskTimeInput(currentValue, false, part);
     if (!Number.isNaN(parsedMs)) {
-      return toDateTimeLocalValue(new Date(parsedMs));
+      return formatTime(new Date(parsedMs), false);
     }
-
-    const normalizedDate = currentValue.replace(/\//g, "-");
-    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(normalizedDate)) {
-      return normalizedDate + (part === "end" ? " 18:00" : " 09:00");
+    if (normalizeDateInputFromAny(currentValue)) {
+      return part === "end" ? "18:00" : "09:00";
     }
     return "";
   }
@@ -669,7 +836,7 @@
     const category = String(els.taskCategory.value || "").trim();
     const subcategory = String(els.taskSubcategory.value || "").trim();
 
-    [els.taskTitle, els.taskOwner, els.taskStartAt, els.taskEndAt, els.taskPinned, els.taskDescription].forEach(function (el) {
+    [els.taskTitle, els.taskOwner, els.taskDate, els.taskStartAt, els.taskEndAt, els.taskPinned, els.taskDescription].forEach(function (el) {
       el.disabled = locked;
     });
     els.allDayBtn.disabled = locked;
@@ -793,12 +960,13 @@
     const title = els.taskTitle.value.trim();
     const owner = els.taskOwner.value.trim();
     const description = els.taskDescription.value.trim();
+    const taskDateInput = String(els.taskDate ? els.taskDate.value || "" : "").trim();
     const startAtInput = String(els.taskStartAt.value || "").trim();
     const endAtInput = String(els.taskEndAt.value || "").trim();
     const pinned = Boolean(els.taskPinned.checked);
     const allDay = Boolean(state.formAllDay);
     const normalizedSubcategory = normalizeSubcategory(category, subcategory);
-    const range = parseTaskTimeRange(startAtInput, endAtInput, allDay);
+    const range = parseTaskTimeRange(startAtInput, endAtInput, allDay, taskDateInput);
     if (!range.ok) {
       showToast(range.message);
       return;
@@ -1003,13 +1171,17 @@
     setAllDayMode(Boolean(task.allDay));
     const startAt = getTaskStartAt(task);
     const endAt = getTaskEndAt(task);
+    if (els.taskDate) {
+      const baseDate = startAt || endAt;
+      els.taskDate.value = baseDate ? toDateKey(new Date(baseDate)) : toDateKey(new Date());
+    }
     if (startAt) {
-      els.taskStartAt.value = task.allDay ? toDateKey(new Date(startAt)) : toDateTimeLocalValue(new Date(startAt));
+      els.taskStartAt.value = task.allDay ? toDateKey(new Date(startAt)) : formatTime(new Date(startAt), false);
     } else {
       els.taskStartAt.value = "";
     }
     if (endAt) {
-      els.taskEndAt.value = task.allDay ? toDateKey(new Date(endAt)) : toDateTimeLocalValue(new Date(endAt));
+      els.taskEndAt.value = task.allDay ? toDateKey(new Date(endAt)) : formatTime(new Date(endAt), false);
     } else {
       els.taskEndAt.value = "";
     }
@@ -1494,12 +1666,6 @@
     const exportStatus = normalizeQueryStatus(els.exportStatus ? els.exportStatus.value : "all");
     const list = getTasksByDateAndStatus(exportDate, exportStatus);
     const conditionText = buildConditionText(exportDate, exportStatus);
-    const statusPool = getExportStatusPool(exportStatus);
-
-    if (list.length === 0 && statusPool.length === 0) {
-      showToast("No data available for export.");
-      return;
-    }
 
     if (window.docx && window.saveAs) {
       try {
@@ -1801,7 +1967,6 @@
     const Document = docxLib.Document;
     const Packer = docxLib.Packer;
     const Paragraph = docxLib.Paragraph;
-    const HeadingLevel = docxLib.HeadingLevel;
     const Table = docxLib.Table;
     const TableCell = docxLib.TableCell;
     const TableRow = docxLib.TableRow;
@@ -1809,59 +1974,16 @@
     const AlignmentType = docxLib.AlignmentType;
     const BorderStyle = docxLib.BorderStyle;
 
-    const statusPool = getExportStatusPool(exportStatus);
-    const sections = buildExportSections(tasks, statusPool, exportDate);
+    const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForTaskTable);
 
     const rows = [
-      createExportSectionRow("Attention to All\nNotices", sections.attention, {
+      createExportSectionRow("Daily Briefing\n每日報告", dailyList, {
         Paragraph: Paragraph,
         TableCell: TableCell,
         TableRow: TableRow,
         WidthType: WidthType,
         AlignmentType: AlignmentType,
         BorderStyle: BorderStyle,
-      }),
-      createExportSectionRow("Daily Briefing\nDaily Tasks", sections.daily, {
-        Paragraph: Paragraph,
-        TableCell: TableCell,
-        TableRow: TableRow,
-        WidthType: WidthType,
-        AlignmentType: AlignmentType,
-        BorderStyle: BorderStyle,
-      }),
-      createExportSectionRow("Banquets & Sales\nEvents", sections.banquets, {
-        Paragraph: Paragraph,
-        TableCell: TableCell,
-        TableRow: TableRow,
-        WidthType: WidthType,
-        AlignmentType: AlignmentType,
-        BorderStyle: BorderStyle,
-      }),
-      createExportSectionRow("Future Follow Up\nUpcoming Tasks", sections.future, {
-        Paragraph: Paragraph,
-        TableCell: TableCell,
-        TableRow: TableRow,
-        WidthType: WidthType,
-        AlignmentType: AlignmentType,
-        BorderStyle: BorderStyle,
-      }),
-      createExportMergedRow(["Internal Transfer Items"], {
-        Paragraph: Paragraph,
-        TableCell: TableCell,
-        TableRow: TableRow,
-        WidthType: WidthType,
-        AlignmentType: AlignmentType,
-        BorderStyle: BorderStyle,
-        center: true,
-      }),
-      createExportMergedRow(buildTransferFyiLines(sections.transfer, sections.fyi), {
-        Paragraph: Paragraph,
-        TableCell: TableCell,
-        TableRow: TableRow,
-        WidthType: WidthType,
-        AlignmentType: AlignmentType,
-        BorderStyle: BorderStyle,
-        center: false,
       }),
     ];
 
@@ -1870,9 +1992,7 @@
         {
           properties: {},
           children: [
-            new Paragraph({ text: "Handover Report", heading: HeadingLevel.HEADING_1 }),
-            new Paragraph({ text: "Export Time: " + formatDateTime(new Date().toISOString()) }),
-            new Paragraph({ text: "Filters: " + conditionText }),
+            new Paragraph({ text: buildArrDepOccLine(exportDate), alignment: AlignmentType.LEFT }),
             new Paragraph({ text: "" }),
             new Table({
               width: {
@@ -1883,8 +2003,6 @@
               borders: createExportBorders(BorderStyle),
               rows: rows,
             }),
-            new Paragraph({ text: "" }),
-            new Paragraph({ text: buildArrDepOccLine(exportDate) }),
           ],
         },
       ],
@@ -2114,12 +2232,11 @@
   }
 
   function exportLegacyDoc(tasks, conditionText, exportDate, exportStatus) {
-    const statusPool = getExportStatusPool(exportStatus);
-    const sections = buildExportSections(tasks, statusPool, exportDate);
+    const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForTaskTable);
 
     function toHtmlLines(lines) {
       if (!Array.isArray(lines) || lines.length === 0) {
-        return "(none)";
+        return "（無資料）";
       }
       return lines
         .map(function (line) {
@@ -2136,37 +2253,16 @@
       "table{width:100%;border-collapse:collapse;table-layout:fixed;}" +
       "td{border:1px solid #000;padding:8px;vertical-align:top;line-height:1.45;}" +
       ".left{width:160px;text-align:center;font-weight:700;}" +
-      ".merge-title{text-align:center;font-weight:700;background:#efefef;}" +
       ".arrdepocc{margin-top:12px;font-weight:700;}" +
       "</style></head><body>" +
-      "<h2>Handover Report</h2>" +
-      "<p>Export Time: " +
-      escapeHtml(formatDateTime(new Date().toISOString())) +
-      "</p>" +
-      "<p>Filters: " +
-      escapeHtml(conditionText) +
-      "</p>" +
-      "<table>" +
-      "<tr><td class='left'>Attention to All<br>Notices</td><td>" +
-      toHtmlLines(buildExportTaskLines(sections.attention)) +
-      "</td></tr>" +
-      "<tr><td class='left'>Daily Briefing<br>Daily Tasks</td><td>" +
-      toHtmlLines(buildExportTaskLines(sections.daily)) +
-      "</td></tr>" +
-      "<tr><td class='left'>Banquets &amp; Sales<br>Events</td><td>" +
-      toHtmlLines(buildExportTaskLines(sections.banquets)) +
-      "</td></tr>" +
-      "<tr><td class='left'>Future Follow Up<br>Upcoming Tasks</td><td>" +
-      toHtmlLines(buildExportTaskLines(sections.future)) +
-      "</td></tr>" +
-      "<tr><td colspan='2' class='merge-title'>Internal Transfer Items</td></tr>" +
-      "<tr><td colspan='2'>" +
-      toHtmlLines(buildTransferFyiLines(sections.transfer, sections.fyi)) +
-      "</td></tr>" +
-      "</table>" +
       "<p class='arrdepocc'>" +
       escapeHtml(buildArrDepOccLine(exportDate)) +
       "</p>" +
+      "<table>" +
+      "<tr><td class='left'>Daily Briefing<br>每日報告</td><td>" +
+      toHtmlLines(buildExportTaskLines(dailyList)) +
+      "</td></tr>" +
+      "</table>" +
       "</body></html>";
 
     const blob = new Blob(["\ufeff", html], {
@@ -2588,11 +2684,18 @@
     return year + "-" + month + "-" + day;
   }
 
-  function parseTaskTimeRange(startInput, endInput, allDay) {
+  function parseTaskTimeRange(startInput, endInput, allDay, baseDateInput) {
     const startText = String(startInput || "").trim();
     const endText = String(endInput || "").trim();
-    const startMs = parseTaskTimeInput(startText, allDay, "start");
-    const endMs = parseTaskTimeInput(endText, allDay, "end");
+    const baseDateText = normalizeDateInputFromAny(baseDateInput);
+    if (!allDay && (startText || endText) && !baseDateText) {
+      return {
+        ok: false,
+        message: "請先選擇日期。",
+      };
+    }
+    const startMs = parseTaskTimeInput(startText, allDay, "start", baseDateText);
+    const endMs = parseTaskTimeInput(endText, allDay, "end", baseDateText);
 
     if (startText && Number.isNaN(startMs)) {
       return {
@@ -2621,7 +2724,7 @@
     };
   }
 
-  function parseTaskTimeInput(value, allDay, part) {
+  function parseTaskTimeInput(value, allDay, part, baseDateInput) {
     const text = String(value || "").trim();
     if (!text) {
       return Number.NaN;
@@ -2641,6 +2744,21 @@
         Number(dayMatch[3]),
         part === "end" ? 23 : 0,
         part === "end" ? 59 : 0,
+      );
+    }
+    const timeOnly = normalized.match(/^(\d{1,2}):(\d{2})$/);
+    if (timeOnly) {
+      const baseDate = normalizeDateInputFromAny(baseDateInput) || toDateKey(new Date());
+      const dayMatch = baseDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (!dayMatch) {
+        return Number.NaN;
+      }
+      return buildDateTimeMs(
+        Number(dayMatch[1]),
+        Number(dayMatch[2]),
+        Number(dayMatch[3]),
+        Number(timeOnly[1]),
+        Number(timeOnly[2]),
       );
     }
     const dtMatch = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})$/);

@@ -14,7 +14,7 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
     />
-    <link rel="stylesheet" href="styles.css?v=20260405-11" />
+    <link rel="stylesheet" href="styles.css?v=20260405-12" />
   </head>
   <body>
     <div class="bg-shape shape-a"></div>
@@ -77,6 +77,7 @@
                 <option value="會議室">會議室</option>
                 <option value="團桌">團桌</option>
                 <option value="客房">客房</option>
+                <option value="預訂">預訂</option>
                 <option value="餐飲部">餐飲部</option>
                 <option value="待回覆信件">待回覆信件</option>
                 <option value="公告">公告</option>
@@ -106,6 +107,7 @@
                 <option value="會議室">會議室</option>
                 <option value="團桌">團桌</option>
                 <option value="客房">客房</option>
+                <option value="預訂">預訂</option>
                 <option value="餐飲部">餐飲部</option>
                 <option value="待回覆信件">待回覆信件</option>
                 <option value="公告">公告</option>
@@ -127,11 +129,12 @@
             </label>
 
             <label>
-              時間（幾點到幾點，可手動輸入、可留空）
+              時間（先選日期，再選幾點到幾點，可留空）
               <div class="due-input-row">
-                <input id="task-start-at" name="startAt" type="text" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" />
+                <input id="task-date" name="taskDate" type="date" />
+                <input id="task-start-at" name="startAt" type="time" step="60" />
                 <span class="time-range-sep">至</span>
-                <input id="task-end-at" name="endAt" type="text" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" />
+                <input id="task-end-at" name="endAt" type="time" step="60" />
                 <button id="all-day-btn" class="btn btn-ghost all-day-btn" type="button" aria-pressed="false">全日</button>
               </div>
             </label>
@@ -293,6 +296,9 @@
 
     <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js" defer></script>
     <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js" defer></script>
-    <script src="app.js?v=20260405-19" defer></script>
+    <script>
+      window.HANDOVER_CLOUD_API_BASE = window.HANDOVER_CLOUD_API_BASE || "";
+    </script>
+    <script src="app.js?v=20260405-22" defer></script>
   </body>
 </html>
