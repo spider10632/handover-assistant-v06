@@ -5,7 +5,7 @@
   const TODAY_OVERVIEW_KEY = "handover_today_overview_v1";
   const ACCESS_PASSWORD = "caesarmetro";
   const BACKUP_TYPE = "handover-backup";
-  const BACKUP_VERSION = "0.6";
+  const BACKUP_VERSION = "0.7";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000;

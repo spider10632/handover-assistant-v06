@@ -148,8 +148,9 @@ body::before {
 }
 
 .app {
-  max-width: 1280px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 28px 20px 56px;
   display: grid;
   gap: 18px;
