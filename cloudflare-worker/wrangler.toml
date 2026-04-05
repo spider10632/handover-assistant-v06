@@ -9,4 +9,4 @@ ALLOWED_USERS = "caesarmetro"
 [[d1_databases]]
 binding = "DB"
 database_name = "handover-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "a83eb4bf-2875-4035-a694-fadd28228ef8"
