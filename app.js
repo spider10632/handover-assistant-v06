@@ -2077,6 +2077,7 @@
 
   function formatExportTaskLine(task) {
     const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
+    const ownerText = task.owner ? String(task.owner).trim() : "-";
     const doneBy = task.status === "done" && task.completedBy ? task.completedBy : "-";
     return (
       "- " +
@@ -2085,6 +2086,8 @@
       categoryText +
       " | " +
       formatDueDisplay(task) +
+      " | 填寫人: " +
+      ownerText +
       " | Done: " +
       doneBy
     );
