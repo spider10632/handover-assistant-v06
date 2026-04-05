@@ -1654,7 +1654,6 @@
       if (document.hidden) {
         return;
       }
-      renderTodayOverviewBar();
       renderTodayTasks();
       renderUpcomingBoard();
     }, COUNTDOWN_REFRESH_MS);
@@ -2568,8 +2567,7 @@
     }
     const clamped = Math.min(100, Math.max(0, number));
     const rounded = Math.round(clamped * 100) / 100;
-    const normalized = rounded.toFixed(2);
-    return normalized.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+    return rounded.toFixed(2);
   }
 
   function buildId() {
