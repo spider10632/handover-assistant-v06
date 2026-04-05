@@ -1826,7 +1826,7 @@
     const AlignmentType = docxLib.AlignmentType;
     const BorderStyle = docxLib.BorderStyle;
 
-    const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForTaskTable);
+    const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForExportCategoryThenTime);
 
     const rows = [
       createExportSectionRow("Daily Briefing\n每日報告", dailyList, {
@@ -2129,6 +2129,7 @@
     const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
     const ownerText = task.owner ? String(task.owner).trim() : "-";
     const doneBy = task.status === "done" && task.completedBy ? task.completedBy : "-";
+    const descText = task.description ? String(task.description).replace(/\s*\n+\s*/g, " / ").trim() : "-";
     return (
       "- " +
       (includeDatePrefix ? formatExportTaskDate(task) + " | " : "") +
@@ -2140,7 +2141,9 @@
       " | 填寫人: " +
       ownerText +
       " | Done: " +
-      doneBy
+      doneBy +
+      " | 說明: " +
+      descText
     );
   }
 
@@ -2198,7 +2201,7 @@
   }
 
   function exportLegacyDoc(tasks, conditionText, exportDate, exportStatus, includeDatePrefix) {
-    const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForTaskTable);
+    const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForExportCategoryThenTime);
 
     function toHtmlLines(taskList) {
       if (!Array.isArray(taskList) || taskList.length === 0) {
@@ -2220,7 +2223,7 @@
     const html =
       "<html><head><meta charset='utf-8'><style>" +
       "@page{margin:0.5in;}" +
-      "body{font-family:Calibri,'DFKai-SB','標楷體','Noto Serif TC',serif;padding:0;color:#111;}" +
+      "body{font-family:Calibri,'DFKai-SB','標楷體','Noto Serif TC',serif;font-size:12pt;padding:0;color:#111;}" +
       "h2{margin:0 0 8px 0;}" +
       "p{margin:4px 0;}" +
       "table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 auto;}" +
@@ -2611,6 +2614,25 @@
       return a.pinned ? -1 : 1;
     }
     return sortByDueTime(a, b);
+  }
+
+  function getCategorySortIndex(category) {
+    const idx = CATEGORIES.indexOf(String(category || "").trim());
+    return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+  }
+
+  function sortForExportCategoryThenTime(a, b) {
+    const categoryDiff = getCategorySortIndex(a && a.category) - getCategorySortIndex(b && b.category);
+    if (categoryDiff !== 0) {
+      return categoryDiff;
+    }
+    const timeDiff = sortByDueTime(a, b);
+    if (timeDiff !== 0) {
+      return timeDiff;
+    }
+    const aTitle = String((a && a.title) || "");
+    const bTitle = String((b && b.title) || "");
+    return aTitle.localeCompare(bTitle, "zh-Hant");
   }
 
   function normalizeCategory(raw) {
