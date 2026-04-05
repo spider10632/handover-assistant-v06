@@ -1835,19 +1835,59 @@
     const BorderStyle = docxLib.BorderStyle;
 
     const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForExportCategoryThenTime);
-
-    const rows = [
-      createExportSectionRow("Daily Briefing\n每日報告", dailyList, {
-        Paragraph: Paragraph,
-        TableCell: TableCell,
-        TableRow: TableRow,
-        WidthType: WidthType,
-        AlignmentType: AlignmentType,
-        BorderStyle: BorderStyle,
-        TextRun: TextRun,
-        includeDatePrefix: Boolean(includeDatePrefix),
+    const showFutureMode = Boolean(includeDatePrefix);
+    const sectionTitle = showFutureMode ? "Future To-Do\n未來待辦事項" : "Daily Briefing\n每日報告";
+    const tableTools = {
+      Paragraph: Paragraph,
+      TableCell: TableCell,
+      TableRow: TableRow,
+      WidthType: WidthType,
+      AlignmentType: AlignmentType,
+      BorderStyle: BorderStyle,
+      TextRun: TextRun,
+      includeDatePrefix: showFutureMode,
+    };
+    function createExportTable(rows) {
+      return new Table({
+        width: {
+          size: 100,
+          type: WidthType.PERCENTAGE,
+        },
+        alignment: AlignmentType.CENTER,
+        columnWidths: [1900, 9000],
+        borders: createExportBorders(BorderStyle),
+        rows: rows,
+      });
+    }
+    const children = [
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [createExportTextRun(TextRun, buildArrDepOccLine(exportDate), { bold: true })],
       }),
+      new Paragraph({ text: "" }),
     ];
+
+    if (showFutureMode) {
+      const grouped = groupExportTasksByDate(dailyList);
+      if (grouped.length === 0) {
+        children.push(createExportTable([createExportSectionRow(sectionTitle, [], tableTools)]));
+      } else {
+        grouped.forEach(function (group, index) {
+          children.push(
+            new Paragraph({
+              alignment: AlignmentType.LEFT,
+              children: [createExportTextRun(TextRun, group.label, { bold: true })],
+            }),
+          );
+          children.push(createExportTable([createExportSectionRow(sectionTitle, group.tasks, tableTools)]));
+          if (index < grouped.length - 1) {
+            children.push(new Paragraph({ text: "" }));
+          }
+        });
+      }
+    } else {
+      children.push(createExportTable([createExportSectionRow(sectionTitle, dailyList, tableTools)]));
+    }
 
     const document = new Document({
       sections: [
@@ -1862,23 +1902,7 @@
               },
             },
           },
-          children: [
-            new Paragraph({
-              alignment: AlignmentType.LEFT,
-              children: [createExportTextRun(TextRun, buildArrDepOccLine(exportDate), { bold: true })],
-            }),
-            new Paragraph({ text: "" }),
-            new Table({
-              width: {
-                size: 100,
-                type: WidthType.PERCENTAGE,
-              },
-              alignment: AlignmentType.CENTER,
-              columnWidths: [1900, 9000],
-              borders: createExportBorders(BorderStyle),
-              rows: rows,
-            }),
-          ],
+          children: children,
         },
       ],
     });
@@ -2132,6 +2156,48 @@
     return mm + "/" + dd;
   }
 
+  function getExportTaskDateKey(task) {
+    const startAt = getTaskStartAt(task);
+    if (!startAt) {
+      return "";
+    }
+    const dt = new Date(startAt);
+    if (Number.isNaN(dt.getTime())) {
+      return "";
+    }
+    return toDateKey(dt);
+  }
+
+  function groupExportTasksByDate(tasks) {
+    const groupedMap = new Map();
+    (Array.isArray(tasks) ? tasks : []).forEach(function (task) {
+      const key = getExportTaskDateKey(task);
+      if (!groupedMap.has(key)) {
+        groupedMap.set(key, []);
+      }
+      groupedMap.get(key).push(task);
+    });
+    const sortedKeys = Array.from(groupedMap.keys()).sort(function (a, b) {
+      if (!a && !b) {
+        return 0;
+      }
+      if (!a) {
+        return 1;
+      }
+      if (!b) {
+        return -1;
+      }
+      return a.localeCompare(b);
+    });
+    return sortedKeys.map(function (key) {
+      return {
+        key: key,
+        label: key ? formatExportDateLabel(key) : "未設定日期 / Undated",
+        tasks: groupedMap.get(key).slice().sort(sortForExportCategoryThenTime),
+      };
+    });
+  }
+
   function formatExportTaskTime(task) {
     if (!task) {
       return "-";
@@ -2237,6 +2303,7 @@
 
   function exportLegacyDoc(tasks, conditionText, exportDate, exportStatus, includeDatePrefix) {
     const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForExportCategoryThenTime);
+    const sectionTitleHtml = includeDatePrefix ? "Future To-Do<br>未來待辦事項" : "Daily Briefing<br>每日報告";
 
     function toHtmlLines(taskList) {
       if (!Array.isArray(taskList) || taskList.length === 0) {
@@ -2255,12 +2322,41 @@
         .join("<br>");
     }
 
+    function buildSectionTableHtml(taskList) {
+      return (
+        "<table>" +
+        "<tr><td class='left'>" +
+        sectionTitleHtml +
+        "</td><td>" +
+        toHtmlLines(taskList) +
+        "</td></tr>" +
+        "</table>"
+      );
+    }
+
+    let groupedSectionHtml = "";
+    if (includeDatePrefix) {
+      const grouped = groupExportTasksByDate(dailyList);
+      if (grouped.length === 0) {
+        groupedSectionHtml = buildSectionTableHtml([]);
+      } else {
+        groupedSectionHtml = grouped
+          .map(function (group) {
+            return "<p class='group-date'>" + escapeHtml(group.label) + "</p>" + buildSectionTableHtml(group.tasks);
+          })
+          .join("");
+      }
+    } else {
+      groupedSectionHtml = buildSectionTableHtml(dailyList);
+    }
+
     const html =
       "<html><head><meta charset='utf-8'><style>" +
       "@page{margin:0.5in;}" +
       "body{font-family:Calibri,'DFKai-SB','標楷體','Noto Serif TC',serif;font-size:12pt;padding:0;color:#111;}" +
       "h2{margin:0 0 8px 0;}" +
       "p{margin:4px 0;}" +
+      ".group-date{margin:12px 0 6px 0;font-weight:700;}" +
       "table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 auto;}" +
       "td{border:1px solid #000;padding:8px;vertical-align:middle;line-height:1.45;text-align:center;}" +
       ".left{width:160px;text-align:center;font-weight:700;}" +
@@ -2269,11 +2365,7 @@
       "<p class='arrdepocc'>" +
       escapeHtml(buildArrDepOccLine(exportDate)) +
       "</p>" +
-      "<table>" +
-      "<tr><td class='left'>Daily Briefing<br>每日報告</td><td>" +
-      toHtmlLines(dailyList) +
-      "</td></tr>" +
-      "</table>" +
+      groupedSectionHtml +
       "</body></html>";
 
     const blob = new Blob(["\ufeff", html], {
