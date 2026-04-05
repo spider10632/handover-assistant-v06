@@ -1735,10 +1735,12 @@
     const exportStatus = normalizeQueryStatus(els.exportStatus ? els.exportStatus.value : "all");
     const list = getTasksByDateAndStatus(exportDate, exportStatus);
     const conditionText = buildConditionText(exportDate, exportStatus);
+    const hasDateFilter = Boolean(normalizeDateInputFromAny(exportDate || state.queryDate || ""));
+    const includeDatePrefix = !hasDateFilter;
 
     if (window.docx && window.saveAs) {
       try {
-        await exportDocx(list, conditionText, exportDate, exportStatus);
+        await exportDocx(list, conditionText, exportDate, exportStatus, includeDatePrefix);
         showToast("Word file exported.");
         return;
       } catch (error) {
@@ -1746,7 +1748,7 @@
       }
     }
 
-    exportLegacyDoc(list, conditionText, exportDate, exportStatus);
+    exportLegacyDoc(list, conditionText, exportDate, exportStatus, includeDatePrefix);
     showToast("Exported via compatibility Word mode.");
   }
 
@@ -1811,7 +1813,7 @@
     };
   }
 
-  async function exportDocx(tasks, conditionText, exportDate, exportStatus) {
+  async function exportDocx(tasks, conditionText, exportDate, exportStatus, includeDatePrefix) {
     const docxLib = window.docx;
     const Document = docxLib.Document;
     const Packer = docxLib.Packer;
@@ -1835,6 +1837,7 @@
         AlignmentType: AlignmentType,
         BorderStyle: BorderStyle,
         TextRun: TextRun,
+        includeDatePrefix: Boolean(includeDatePrefix),
       }),
     ];
 
@@ -2020,7 +2023,7 @@
       return new tools.Paragraph({
         alignment: tools.AlignmentType.CENTER,
         children: [
-          createExportTextRun(tools.TextRun, formatExportTaskLine(task), {
+          createExportTextRun(tools.TextRun, formatExportTaskLine(task, { includeDatePrefix: tools.includeDatePrefix }), {
             color: getExportCategoryColor(task && task.category),
           }),
         ],
@@ -2090,11 +2093,13 @@
     };
   }
 
-  function buildExportTaskLines(tasks) {
+  function buildExportTaskLines(tasks, options) {
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return [];
     }
-    return tasks.map(formatExportTaskLine);
+    return tasks.map(function (task) {
+      return formatExportTaskLine(task, options);
+    });
   }
 
   function getExportCategoryColor(category) {
@@ -2105,12 +2110,28 @@
     return EXPORT_CATEGORY_COLORS[key] || EXPORT_DEFAULT_COLOR;
   }
 
-  function formatExportTaskLine(task) {
+  function formatExportTaskDate(task) {
+    const startAt = getTaskStartAt(task);
+    if (!startAt) {
+      return "--/--";
+    }
+    const dt = new Date(startAt);
+    if (Number.isNaN(dt.getTime())) {
+      return "--/--";
+    }
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return mm + "/" + dd;
+  }
+
+  function formatExportTaskLine(task, options) {
+    const includeDatePrefix = Boolean(options && options.includeDatePrefix);
     const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
     const ownerText = task.owner ? String(task.owner).trim() : "-";
     const doneBy = task.status === "done" && task.completedBy ? task.completedBy : "-";
     return (
       "- " +
+      (includeDatePrefix ? formatExportTaskDate(task) + " | " : "") +
       (task.title || "-") +
       " | " +
       categoryText +
@@ -2175,7 +2196,7 @@
     return formatDateOnly(normalized);
   }
 
-  function exportLegacyDoc(tasks, conditionText, exportDate, exportStatus) {
+  function exportLegacyDoc(tasks, conditionText, exportDate, exportStatus, includeDatePrefix) {
     const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForTaskTable);
 
     function toHtmlLines(taskList) {
@@ -2188,7 +2209,7 @@
             "<span style='color:#" +
             getExportCategoryColor(task && task.category) +
             ";'>" +
-            escapeHtml(formatExportTaskLine(task)) +
+            escapeHtml(formatExportTaskLine(task, { includeDatePrefix: includeDatePrefix })) +
             "</span>"
           );
         })
