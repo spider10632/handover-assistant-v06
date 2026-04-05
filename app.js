@@ -35,6 +35,22 @@
     客房: ["下行李", "房務相關事項", "送房", "佈置", "其他"],
     預訂: ["餐廳", "車票", "其他"],
   };
+  const EXPORT_FONT_EAST_ASIA = "DFKai-SB";
+  const EXPORT_FONT_LATIN = "Calibri";
+  const EXPORT_DEFAULT_COLOR = "1F2A2A";
+  const EXPORT_CATEGORY_COLORS = Object.freeze({
+    廣場: "B42318",
+    包裹代收: "1D4ED8",
+    車輛安排: "0F766E",
+    大廳: "A16207",
+    會議室: "6D28D9",
+    團桌: "C2410C",
+    客房: "0E7490",
+    預訂: "7C3AED",
+    餐飲部: "9A3412",
+    待回覆信件: "1E40AF",
+    公告: "334155",
+  });
 
   const state = {
     tasks: [],
@@ -1755,6 +1771,7 @@
     const Document = docxLib.Document;
     const Packer = docxLib.Packer;
     const Paragraph = docxLib.Paragraph;
+    const TextRun = docxLib.TextRun;
     const Table = docxLib.Table;
     const TableCell = docxLib.TableCell;
     const TableRow = docxLib.TableRow;
@@ -1772,21 +1789,35 @@
         WidthType: WidthType,
         AlignmentType: AlignmentType,
         BorderStyle: BorderStyle,
+        TextRun: TextRun,
       }),
     ];
 
     const document = new Document({
       sections: [
         {
-          properties: {},
+          properties: {
+            page: {
+              margin: {
+                top: 720,
+                right: 720,
+                bottom: 720,
+                left: 720,
+              },
+            },
+          },
           children: [
-            new Paragraph({ text: buildArrDepOccLine(exportDate), alignment: AlignmentType.LEFT }),
+            new Paragraph({
+              alignment: AlignmentType.LEFT,
+              children: [createExportTextRun(TextRun, buildArrDepOccLine(exportDate), { bold: true })],
+            }),
             new Paragraph({ text: "" }),
             new Table({
               width: {
                 size: 100,
                 type: WidthType.PERCENTAGE,
               },
+              alignment: AlignmentType.CENTER,
               columnWidths: [1900, 9000],
               borders: createExportBorders(BorderStyle),
               rows: rows,
@@ -1818,6 +1849,8 @@
           borders: createExportBorders(tools.BorderStyle),
           children: createExportParagraphs(titleLines, tools.Paragraph, {
             alignment: tools.AlignmentType.CENTER,
+            TextRun: tools.TextRun,
+            bold: true,
           }),
         }),
         new tools.TableCell({
@@ -1826,9 +1859,7 @@
             type: tools.WidthType.DXA,
           },
           borders: createExportBorders(tools.BorderStyle),
-          children: createExportParagraphs(buildExportTaskLines(tasks), tools.Paragraph, {
-            alignment: tools.AlignmentType.LEFT,
-          }),
+          children: createExportTaskParagraphs(tasks, tools),
         }),
       ],
     });
@@ -1846,6 +1877,7 @@
           borders: createExportBorders(tools.BorderStyle),
           children: createExportParagraphs(lines, tools.Paragraph, {
             alignment: tools.center ? tools.AlignmentType.CENTER : tools.AlignmentType.LEFT,
+            TextRun: tools.TextRun,
           }),
         }),
       ],
@@ -1853,14 +1885,36 @@
   }
 
   function createExportParagraphs(lines, Paragraph, options) {
-    const list = Array.isArray(lines) ? lines.filter(Boolean) : [];
+    const list = Array.isArray(lines) ? lines : [];
     const align = options && options.alignment ? options.alignment : undefined;
+    const TextRun = options && options.TextRun ? options.TextRun : null;
+    const bold = Boolean(options && options.bold);
     if (list.length === 0) {
-      return [new Paragraph({ text: "(none)", alignment: align })];
+      if (TextRun) {
+        return [
+          new Paragraph({
+            alignment: align,
+            children: [createExportTextRun(TextRun, "（無資料）", { bold: bold })],
+          }),
+        ];
+      }
+      return [new Paragraph({ text: "（無資料）", alignment: align })];
     }
     return list.map(function (line) {
+      const normalized = normalizeExportLineItem(line);
+      if (TextRun) {
+        return new Paragraph({
+          alignment: align,
+          children: [
+            createExportTextRun(TextRun, normalized.text, {
+              color: normalized.color,
+              bold: normalized.bold || bold,
+            }),
+          ],
+        });
+      }
       return new Paragraph({
-        text: String(line),
+        text: normalized.text,
         alignment: align,
       });
     });
@@ -1875,6 +1929,58 @@
       insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
       insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
     };
+  }
+
+  function normalizeExportLineItem(line) {
+    if (line && typeof line === "object" && !Array.isArray(line)) {
+      return {
+        text: String(line.text || "").trim(),
+        color: String(line.color || "").trim(),
+        bold: Boolean(line.bold),
+      };
+    }
+    return {
+      text: String(line || "").trim(),
+      color: "",
+      bold: false,
+    };
+  }
+
+  function createExportTextRun(TextRun, text, options) {
+    const style = options && typeof options === "object" ? options : {};
+    const color = String(style.color || "").trim().replace(/^#/, "") || EXPORT_DEFAULT_COLOR;
+    return new TextRun({
+      text: String(text || ""),
+      bold: Boolean(style.bold),
+      color: color,
+      font: {
+        ascii: EXPORT_FONT_LATIN,
+        hAnsi: EXPORT_FONT_LATIN,
+        eastAsia: EXPORT_FONT_EAST_ASIA,
+        cs: EXPORT_FONT_LATIN,
+      },
+      size: 24,
+    });
+  }
+
+  function createExportTaskParagraphs(tasks, tools) {
+    const list = Array.isArray(tasks) ? tasks : [];
+    if (list.length === 0) {
+      return createExportParagraphs([], tools.Paragraph, {
+        alignment: tools.AlignmentType.CENTER,
+        TextRun: tools.TextRun,
+      });
+    }
+    return list.map(function (task) {
+      return new tools.Paragraph({
+        alignment: tools.AlignmentType.CENTER,
+        children: [
+          createExportTextRun(tools.TextRun, formatExportTaskLine(task), {
+            color: getExportCategoryColor(task && task.category),
+          }),
+        ],
+      });
+    });
   }
 
   function getExportStatusPool(exportStatus) {
@@ -1946,11 +2052,17 @@
     return tasks.map(formatExportTaskLine);
   }
 
+  function getExportCategoryColor(category) {
+    const key = String(category || "").trim();
+    if (!key) {
+      return EXPORT_DEFAULT_COLOR;
+    }
+    return EXPORT_CATEGORY_COLORS[key] || EXPORT_DEFAULT_COLOR;
+  }
+
   function formatExportTaskLine(task) {
     const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
-    const statusText = task.status === "done" ? "Done" : "Pending";
-    const completedByText = task.status === "done" && task.completedBy ? " | Completed By: " + task.completedBy : "";
-    const descText = task.description ? " | " + task.description : "";
+    const doneBy = task.status === "done" && task.completedBy ? task.completedBy : "-";
     return (
       "- " +
       (task.title || "-") +
@@ -1958,12 +2070,8 @@
       categoryText +
       " | " +
       formatDueDisplay(task) +
-      " | Owner: " +
-      (task.owner || "-") +
-      " | " +
-      statusText +
-      completedByText +
-      descText
+      " | Done: " +
+      doneBy
     );
   }
 
@@ -2022,24 +2130,31 @@
   function exportLegacyDoc(tasks, conditionText, exportDate, exportStatus) {
     const dailyList = (Array.isArray(tasks) ? tasks.slice() : []).sort(sortForTaskTable);
 
-    function toHtmlLines(lines) {
-      if (!Array.isArray(lines) || lines.length === 0) {
+    function toHtmlLines(taskList) {
+      if (!Array.isArray(taskList) || taskList.length === 0) {
         return "（無資料）";
       }
-      return lines
-        .map(function (line) {
-          return escapeHtml(line);
+      return taskList
+        .map(function (task) {
+          return (
+            "<span style='color:#" +
+            getExportCategoryColor(task && task.category) +
+            ";'>" +
+            escapeHtml(formatExportTaskLine(task)) +
+            "</span>"
+          );
         })
         .join("<br>");
     }
 
     const html =
       "<html><head><meta charset='utf-8'><style>" +
-      "body{font-family:'DFKai-SB','Noto Serif TC',serif;padding:16px;color:#111;}" +
+      "@page{margin:0.5in;}" +
+      "body{font-family:Calibri,'DFKai-SB','標楷體','Noto Serif TC',serif;padding:0;color:#111;}" +
       "h2{margin:0 0 8px 0;}" +
       "p{margin:4px 0;}" +
-      "table{width:100%;border-collapse:collapse;table-layout:fixed;}" +
-      "td{border:1px solid #000;padding:8px;vertical-align:top;line-height:1.45;}" +
+      "table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 auto;}" +
+      "td{border:1px solid #000;padding:8px;vertical-align:middle;line-height:1.45;text-align:center;}" +
       ".left{width:160px;text-align:center;font-weight:700;}" +
       ".arrdepocc{margin-top:12px;font-weight:700;}" +
       "</style></head><body>" +
@@ -2048,7 +2163,7 @@
       "</p>" +
       "<table>" +
       "<tr><td class='left'>Daily Briefing<br>每日報告</td><td>" +
-      toHtmlLines(buildExportTaskLines(dailyList)) +
+      toHtmlLines(dailyList) +
       "</td></tr>" +
       "</table>" +
       "</body></html>";
