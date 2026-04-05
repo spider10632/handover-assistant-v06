@@ -1731,16 +1731,24 @@
   }
 
   async function handleExportWord() {
-    const exportDate = els.exportDate ? String(els.exportDate.value || "").trim() : "";
+    const exportDateInput = els.exportDate ? String(els.exportDate.value || "").trim() : "";
+    const effectiveDate = normalizeDateInputFromAny(exportDateInput || state.queryDate || "");
     const exportStatus = normalizeQueryStatus(els.exportStatus ? els.exportStatus.value : "all");
-    const list = getTasksByDateAndStatus(exportDate, exportStatus);
-    const conditionText = buildConditionText(exportDate, exportStatus);
-    const hasDateFilter = Boolean(normalizeDateInputFromAny(exportDate || state.queryDate || ""));
+    let list = getTasksByDateAndStatus(effectiveDate, exportStatus);
+    const conditionText = buildConditionText(effectiveDate, exportStatus);
+    const hasDateFilter = Boolean(effectiveDate);
     const includeDatePrefix = !hasDateFilter;
+
+    if (!hasDateFilter) {
+      const todayKey = toDateKey(new Date());
+      list = list.filter(function (task) {
+        return isTaskNotPastByDateKey(task, todayKey);
+      });
+    }
 
     if (window.docx && window.saveAs) {
       try {
-        await exportDocx(list, conditionText, exportDate, exportStatus, includeDatePrefix);
+        await exportDocx(list, conditionText, effectiveDate, exportStatus, includeDatePrefix);
         showToast("Word file exported.");
         return;
       } catch (error) {
@@ -1748,7 +1756,7 @@
       }
     }
 
-    exportLegacyDoc(list, conditionText, exportDate, exportStatus, includeDatePrefix);
+    exportLegacyDoc(list, conditionText, effectiveDate, exportStatus, includeDatePrefix);
     showToast("Exported via compatibility Word mode.");
   }
 
@@ -2626,6 +2634,27 @@
       return null;
     }
     return task.endAt || null;
+  }
+
+  function isTaskNotPastByDateKey(task, baseDateKey) {
+    const key = String(baseDateKey || "").trim();
+    if (!key) {
+      return true;
+    }
+    const startAt = getTaskStartAt(task);
+    const endAt = getTaskEndAt(task);
+    if (!startAt && !endAt) {
+      return true;
+    }
+    const endKey = endAt ? toDateKey(new Date(endAt)) : "";
+    if (endKey) {
+      return endKey >= key;
+    }
+    const startKey = startAt ? toDateKey(new Date(startAt)) : "";
+    if (!startKey) {
+      return true;
+    }
+    return startKey >= key;
   }
 
   function sortByDueTime(a, b) {
