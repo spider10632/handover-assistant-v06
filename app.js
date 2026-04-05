@@ -2187,8 +2187,13 @@
   }
 
   function buildExportFileName(ext, exportDate) {
-    const datePart = exportDate || state.queryDate || toDateKey(new Date());
-    return "工作交接清單_" + datePart + "." + ext;
+    const preferredDate = String(exportDate || state.queryDate || "").trim();
+    const normalized = normalizeDateInputFromAny(preferredDate);
+    if (normalized && /^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      const mmdd = normalized.slice(5, 7) + normalized.slice(8, 10);
+      return mmdd + "." + ext;
+    }
+    return "未來待辦事項." + ext;
   }
 
   function normalizeQueryStatus(raw) {
