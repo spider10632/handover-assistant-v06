@@ -3,6 +3,7 @@
 
   const STORAGE_KEY = "handover_tasks_v1";
   const TODAY_OVERVIEW_KEY = "handover_today_overview_v1";
+  const DELETED_TASK_IDS_KEY = "handover_deleted_task_ids_v1";
   const ACCESS_PASSWORD = "caesarmetro";
   const BACKUP_TYPE = "handover-backup";
   const BACKUP_VERSION = "0.7";
@@ -39,6 +40,7 @@
     autoLoadTimer: null,
     autoSaveFileHandle: null,
     lastAutoSaveAt: null,
+    deletedTaskIds: {},
     toastTimer: null,
     initialized: false,
   };
@@ -58,6 +60,14 @@
     }
     state.initialized = true;
     state.tasks = loadTasks();
+    state.deletedTaskIds = loadDeletedTaskIds();
+    {
+      const filtered = filterTasksByDeletedMap(state.tasks, state.deletedTaskIds);
+      state.tasks = filtered.tasks;
+      state.deletedTaskIds = filtered.deletedTaskIds;
+    }
+    saveTasks();
+    saveDeletedTaskIds();
     state.todayOverview = loadTodayOverview();
     bindEvents();
     syncCollapsiblePanels();
@@ -463,6 +473,24 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
   }
 
+  function loadDeletedTaskIds() {
+    try {
+      const raw = localStorage.getItem(DELETED_TASK_IDS_KEY);
+      if (!raw) {
+        return {};
+      }
+      const parsed = JSON.parse(raw);
+      return normalizeDeletedTaskIds(parsed);
+    } catch (error) {
+      console.error("loadDeletedTaskIds error", error);
+      return {};
+    }
+  }
+
+  function saveDeletedTaskIds() {
+    localStorage.setItem(DELETED_TASK_IDS_KEY, JSON.stringify(state.deletedTaskIds || {}));
+  }
+
   function normalizeTask(input) {
     if (!input || typeof input !== "object") {
       return null;
@@ -486,6 +514,8 @@
     const allDay = Boolean(input.allDay);
     const remindedAtMs = input.remindedAt ? new Date(input.remindedAt).getTime() : Number.NaN;
     const createdAtMs = input.createdAt ? new Date(input.createdAt).getTime() : Number.NaN;
+    const updatedAtMs = input.updatedAt ? new Date(input.updatedAt).getTime() : Number.NaN;
+    const createdAtIso = Number.isNaN(createdAtMs) ? new Date().toISOString() : new Date(createdAtMs).toISOString();
     const category = normalizeCategory(input.category);
     return {
       id: typeof input.id === "string" ? input.id : buildId(),
@@ -502,7 +532,8 @@
       status: status,
       pinned: Boolean(input.pinned),
       remindedAt: Number.isNaN(remindedAtMs) ? null : new Date(remindedAtMs).toISOString(),
-      createdAt: Number.isNaN(createdAtMs) ? new Date().toISOString() : new Date(createdAtMs).toISOString(),
+      createdAt: createdAtIso,
+      updatedAt: Number.isNaN(updatedAtMs) ? createdAtIso : new Date(updatedAtMs).toISOString(),
     };
   }
 
@@ -561,6 +592,7 @@
       if (task.status === "pending") {
         task.remindedAt = null;
       }
+      touchTask(task);
       state.tasks.sort(sortByDueTime);
       saveTasks();
       renderAll();
@@ -569,6 +601,7 @@
       return;
     }
 
+    const nowIso = new Date().toISOString();
     state.tasks.push({
       id: buildId(),
       category: category,
@@ -584,7 +617,8 @@
       status: "pending",
       pinned: pinned,
       remindedAt: null,
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
     });
 
     state.tasks.sort(sortByDueTime);
@@ -668,6 +702,7 @@
         task.remindedAt = null;
         task.completedBy = "";
       }
+      touchTask(task);
       saveTasks();
       renderAll();
       showToast(task.status === "done" ? "已標記完成。" : "已恢復為待辦。");
@@ -686,6 +721,7 @@
 
     if (action === "pin") {
       task.pinned = !task.pinned;
+      touchTask(task);
       saveTasks();
       renderAll();
       showToast(task.pinned ? "已設為置頂。" : "已取消置頂。");
@@ -703,7 +739,9 @@
       if (state.editingTaskId === taskId) {
         resetTaskForm();
       }
+      state.deletedTaskIds[taskId] = new Date().toISOString();
       saveTasks();
+      saveDeletedTaskIds();
       renderAll();
       showToast("待辦已刪除。");
     }
@@ -1338,7 +1376,12 @@
       if (!imported) {
         return;
       }
-      const changed = applyImportedBackup(imported, true);
+      const merged = mergeBackupState(imported, {
+        tasks: state.tasks,
+        todayOverview: state.todayOverview,
+        deletedTaskIds: state.deletedTaskIds,
+      });
+      const changed = applyImportedBackup(merged, true);
       if (changed) {
         showToast("已自動讀取最新資料。");
       }
@@ -1360,10 +1403,46 @@
       return false;
     }
     try {
-      const json = JSON.stringify(buildBackupPayload(), null, 2);
+      let merged = {
+        tasks: state.tasks,
+        todayOverview: state.todayOverview,
+        deletedTaskIds: state.deletedTaskIds,
+      };
+
+      if (typeof handle.getFile === "function") {
+        try {
+          const currentFile = await handle.getFile();
+          const currentText = await currentFile.text();
+          if (currentText) {
+            const parsed = JSON.parse(currentText);
+            const existing = parseBackupPayload(parsed);
+            if (existing) {
+              merged = mergeBackupState(existing, merged);
+            }
+          }
+        } catch (error) {
+          console.error("merge existing backup before write failed", error);
+        }
+      }
+
+      const payload = {
+        type: BACKUP_TYPE,
+        version: BACKUP_VERSION,
+        exportedAt: new Date().toISOString(),
+        tasks: merged.tasks.slice(),
+        deletedTaskIds: normalizeDeletedTaskIds(merged.deletedTaskIds),
+        todayOverview: {
+          checkin: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkin),
+          checkout: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkout),
+          occupancy: normalizeOccupancyRateValue(merged.todayOverview && merged.todayOverview.occupancy),
+        },
+      };
+
+      const json = JSON.stringify(payload, null, 2);
       const writable = await handle.createWritable();
       await writable.write(json);
       await writable.close();
+      applyImportedBackup(merged, true);
       return true;
     } catch (error) {
       console.error("writeBackupToFileHandle error", error);
@@ -1441,7 +1520,12 @@
         showToast("資料格式不正確。");
         return;
       }
-      const changed = applyImportedBackup(imported, false);
+      const merged = mergeBackupState(imported, {
+        tasks: state.tasks,
+        todayOverview: state.todayOverview,
+        deletedTaskIds: state.deletedTaskIds,
+      });
+      const changed = applyImportedBackup(merged, false);
       if (!changed) {
         showToast("資料已是最新。");
       }
@@ -1478,6 +1562,7 @@
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       tasks: state.tasks.slice(),
+      deletedTaskIds: normalizeDeletedTaskIds(state.deletedTaskIds),
       todayOverview: {
         checkin: state.todayOverview.checkin || "",
         checkout: state.todayOverview.checkout || "",
@@ -1490,18 +1575,22 @@
     if (!imported || typeof imported !== "object") {
       return false;
     }
+    const normalizedImportedDeleted = normalizeDeletedTaskIds(imported.deletedTaskIds);
     const tasksChanged = JSON.stringify(state.tasks) !== JSON.stringify(imported.tasks);
     const overviewChanged = JSON.stringify(state.todayOverview) !== JSON.stringify(imported.todayOverview);
-    if (!tasksChanged && !overviewChanged) {
+    const deletedChanged = JSON.stringify(normalizeDeletedTaskIds(state.deletedTaskIds)) !== JSON.stringify(normalizedImportedDeleted);
+    if (!tasksChanged && !overviewChanged && !deletedChanged) {
       return false;
     }
 
     state.tasks = imported.tasks;
     state.todayOverview = imported.todayOverview;
-    if (state.editingTaskId) {
+    state.deletedTaskIds = normalizedImportedDeleted;
+    if (state.editingTaskId && !silent) {
       resetTaskForm();
     }
     saveTasks();
+    saveDeletedTaskIds();
     saveTodayOverview();
     renderTodayOverviewBar();
     renderAll();
@@ -1514,6 +1603,7 @@
   function parseBackupPayload(payload) {
     let rawTasks = [];
     let rawTodayOverview = {};
+    let rawDeletedTaskIds = {};
 
     if (Array.isArray(payload)) {
       rawTasks = payload;
@@ -1521,18 +1611,21 @@
       rawTasks = Array.isArray(payload.tasks) ? payload.tasks : [];
       rawTodayOverview =
         payload.todayOverview && typeof payload.todayOverview === "object" ? payload.todayOverview : {};
+      rawDeletedTaskIds =
+        payload.deletedTaskIds && typeof payload.deletedTaskIds === "object" ? payload.deletedTaskIds : {};
     } else {
       return null;
     }
 
-    const tasks = rawTasks.map(normalizeTask).filter(Boolean).sort(sortByDueTime);
+    const filtered = filterTasksByDeletedMap(rawTasks.map(normalizeTask).filter(Boolean), rawDeletedTaskIds);
     return {
-      tasks: tasks,
+      tasks: filtered.tasks,
       todayOverview: {
         checkin: normalizeTodayOverviewValue(rawTodayOverview.checkin),
         checkout: normalizeTodayOverviewValue(rawTodayOverview.checkout),
         occupancy: normalizeOccupancyRateValue(rawTodayOverview.occupancy),
       },
+      deletedTaskIds: filtered.deletedTaskIds,
     };
   }
 
@@ -2117,6 +2210,144 @@
       return window.crypto.randomUUID();
     }
     return "task_" + Date.now() + "_" + Math.random().toString(16).slice(2);
+  }
+
+  function touchTask(task) {
+    if (!task || typeof task !== "object") {
+      return;
+    }
+    task.updatedAt = new Date().toISOString();
+  }
+
+  function getTaskRevisionMs(task) {
+    if (!task) {
+      return 0;
+    }
+    const raw = task.updatedAt || task.createdAt;
+    if (!raw) {
+      return 0;
+    }
+    const ms = new Date(raw).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function mergeTasksById(baseTasks, incomingTasks) {
+    const merged = new Map();
+    (Array.isArray(baseTasks) ? baseTasks : []).forEach(function (task) {
+      const normalized = normalizeTask(task);
+      if (!normalized) {
+        return;
+      }
+      merged.set(normalized.id, normalized);
+    });
+
+    (Array.isArray(incomingTasks) ? incomingTasks : []).forEach(function (task) {
+      const normalized = normalizeTask(task);
+      if (!normalized) {
+        return;
+      }
+      const existing = merged.get(normalized.id);
+      if (!existing) {
+        merged.set(normalized.id, normalized);
+        return;
+      }
+      if (getTaskRevisionMs(normalized) >= getTaskRevisionMs(existing)) {
+        merged.set(normalized.id, normalized);
+      }
+    });
+
+    return Array.from(merged.values()).sort(sortByDueTime);
+  }
+
+  function mergeTodayOverview(baseOverview, incomingOverview) {
+    const base = baseOverview && typeof baseOverview === "object" ? baseOverview : {};
+    const incoming = incomingOverview && typeof incomingOverview === "object" ? incomingOverview : {};
+    const hasIncomingCheckin = Object.prototype.hasOwnProperty.call(incoming, "checkin");
+    const hasIncomingCheckout = Object.prototype.hasOwnProperty.call(incoming, "checkout");
+    const hasIncomingOccupancy = Object.prototype.hasOwnProperty.call(incoming, "occupancy");
+    return {
+      checkin: normalizeTodayOverviewValue(hasIncomingCheckin ? incoming.checkin : base.checkin),
+      checkout: normalizeTodayOverviewValue(hasIncomingCheckout ? incoming.checkout : base.checkout),
+      occupancy: normalizeOccupancyRateValue(hasIncomingOccupancy ? incoming.occupancy : base.occupancy),
+    };
+  }
+
+  function getDeletedTaskRevisionMs(deletedTaskIds, taskId) {
+    if (!deletedTaskIds || typeof deletedTaskIds !== "object") {
+      return 0;
+    }
+    const raw = deletedTaskIds[taskId];
+    if (!raw) {
+      return 0;
+    }
+    const ms = new Date(raw).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function normalizeDeletedTaskIds(input) {
+    const source = input && typeof input === "object" ? input : {};
+    const result = {};
+    Object.keys(source).forEach(function (taskId) {
+      const normalizedId = String(taskId || "").trim();
+      if (!normalizedId) {
+        return;
+      }
+      const ms = new Date(source[taskId]).getTime();
+      if (!Number.isFinite(ms)) {
+        return;
+      }
+      result[normalizedId] = new Date(ms).toISOString();
+    });
+    return result;
+  }
+
+  function mergeDeletedTaskIds(baseDeletedTaskIds, incomingDeletedTaskIds) {
+    const merged = normalizeDeletedTaskIds(baseDeletedTaskIds);
+    const incoming = normalizeDeletedTaskIds(incomingDeletedTaskIds);
+    Object.keys(incoming).forEach(function (taskId) {
+      const incomingMs = getDeletedTaskRevisionMs(incoming, taskId);
+      const currentMs = getDeletedTaskRevisionMs(merged, taskId);
+      if (incomingMs >= currentMs) {
+        merged[taskId] = incoming[taskId];
+      }
+    });
+    return merged;
+  }
+
+  function filterTasksByDeletedMap(tasks, deletedTaskIds) {
+    const deleted = normalizeDeletedTaskIds(deletedTaskIds);
+    const result = [];
+    (Array.isArray(tasks) ? tasks : []).forEach(function (task) {
+      const normalized = normalizeTask(task);
+      if (!normalized) {
+        return;
+      }
+      const deletedMs = getDeletedTaskRevisionMs(deleted, normalized.id);
+      if (deletedMs === 0) {
+        result.push(normalized);
+        return;
+      }
+      if (getTaskRevisionMs(normalized) > deletedMs) {
+        result.push(normalized);
+        delete deleted[normalized.id];
+      }
+    });
+    return {
+      tasks: result.sort(sortByDueTime),
+      deletedTaskIds: deleted,
+    };
+  }
+
+  function mergeBackupState(baseState, incomingState) {
+    const base = baseState && typeof baseState === "object" ? baseState : {};
+    const incoming = incomingState && typeof incomingState === "object" ? incomingState : {};
+    const mergedDeletedTaskIds = mergeDeletedTaskIds(base.deletedTaskIds, incoming.deletedTaskIds);
+    const filtered = filterTasksByDeletedMap(mergeTasksById(base.tasks, incoming.tasks), mergedDeletedTaskIds);
+    return {
+      tasks: filtered.tasks,
+      todayOverview: mergeTodayOverview(base.todayOverview, incoming.todayOverview),
+      deletedTaskIds: filtered.deletedTaskIds,
+    };
   }
 
   function getTaskStartAt(task) {
