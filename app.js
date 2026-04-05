@@ -8,7 +8,8 @@
   const BACKUP_VERSION = "0.7";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
-  const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000;
+  const AUTO_SAVE_INTERVAL_MS = 10 * 1000;
+  const AUTO_LOAD_INTERVAL_MS = 30 * 1000;
   const TOAST_MS = 3000;
   const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "餐飲部", "待回覆信件", "公告"];
   const SUBCATEGORY_MAP = {
@@ -35,6 +36,7 @@
     reminderTimer: null,
     countdownTimer: null,
     autoSaveTimer: null,
+    autoLoadTimer: null,
     autoSaveFileHandle: null,
     lastAutoSaveAt: null,
     toastTimer: null,
@@ -76,6 +78,7 @@
     startReminderLoop();
     startCountdownLoop();
     startAutoSaveLoop();
+    startAutoLoadLoop();
   }
 
   function initAccessGate() {
@@ -1230,11 +1233,34 @@
     showToast("Exported via compatibility Word mode.");
   }
 
-  function handleSaveData() {
+  async function handleSaveData() {
+    if (canUseFileSystemAccessApi()) {
+      try {
+        let handle = state.autoSaveFileHandle;
+        if (!handle) {
+          handle = await window.showSaveFilePicker(buildBackupPickerOptions());
+        }
+        const ok = await writeBackupToFileHandle(handle, true);
+        if (!ok) {
+          showToast("儲存失敗，請確認檔案權限。");
+          return;
+        }
+        state.autoSaveFileHandle = handle;
+        state.lastAutoSaveAt = new Date().toISOString();
+        updateAutoSaveStatus();
+        showToast("已儲存並覆蓋原本檔案。");
+        return;
+      } catch (error) {
+        if (error && error.name === "AbortError") {
+          return;
+        }
+        console.error("handleSaveData (overwrite) error", error);
+      }
+    }
     try {
       const filename = buildBackupFileName();
       downloadBackupFile(filename);
-      showToast("已將資料儲存到電腦。");
+      showToast("已下載備份檔。");
     } catch (error) {
       console.error("handleSaveData error", error);
       showToast("儲存資料失敗。");
@@ -1243,30 +1269,20 @@
 
   async function handlePickAutoSaveFile() {
     if (!canUseFileSystemAccessApi()) {
-      showToast("目前瀏覽器不支援自動儲存到本機檔案。");
+      showToast("目前瀏覽器不支援直接存到本機檔案。");
       return;
     }
     try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: "handover_autosave.json",
-        types: [
-          {
-            description: "JSON",
-            accept: {
-              "application/json": [".json"],
-            },
-          },
-        ],
-      });
+      const handle = await window.showSaveFilePicker(buildBackupPickerOptions());
       const ok = await writeBackupToFileHandle(handle, true);
       if (!ok) {
-        showToast("自動儲存檔案未授權，無法啟用。");
+        showToast("無法寫入自動儲存檔案。");
         return;
       }
       state.autoSaveFileHandle = handle;
       state.lastAutoSaveAt = new Date().toISOString();
       updateAutoSaveStatus();
-      showToast("已啟用每 5 分鐘自動儲存。");
+      showToast("已啟用自動儲存（每10秒）與自動讀取（每30秒）。");
     } catch (error) {
       if (error && error.name === "AbortError") {
         return;
@@ -1285,6 +1301,15 @@
     }, AUTO_SAVE_INTERVAL_MS);
   }
 
+  function startAutoLoadLoop() {
+    if (state.autoLoadTimer) {
+      clearInterval(state.autoLoadTimer);
+    }
+    state.autoLoadTimer = setInterval(function () {
+      autoLoadFromSelectedFile();
+    }, AUTO_LOAD_INTERVAL_MS);
+  }
+
   async function autoSaveToSelectedFile() {
     if (!state.autoSaveFileHandle) {
       return;
@@ -1296,6 +1321,30 @@
     }
     state.lastAutoSaveAt = new Date().toISOString();
     updateAutoSaveStatus();
+  }
+
+  async function autoLoadFromSelectedFile() {
+    if (!state.autoSaveFileHandle || typeof state.autoSaveFileHandle.getFile !== "function") {
+      return;
+    }
+    try {
+      const file = await state.autoSaveFileHandle.getFile();
+      const raw = await file.text();
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      const imported = parseBackupPayload(parsed);
+      if (!imported) {
+        return;
+      }
+      const changed = applyImportedBackup(imported, true);
+      if (changed) {
+        showToast("已自動讀取最新資料。");
+      }
+    } catch (error) {
+      console.error("autoLoadFromSelectedFile error", error);
+    }
   }
 
   function canUseFileSystemAccessApi() {
@@ -1322,6 +1371,20 @@
     }
   }
 
+  function buildBackupPickerOptions() {
+    return {
+      suggestedName: "handover_autosave.json",
+      types: [
+        {
+          description: "JSON",
+          accept: {
+            "application/json": [".json"],
+          },
+        },
+      ],
+    };
+  }
+
   async function ensureFileHandlePermission(handle, allowPermissionPrompt) {
     if (!handle || typeof handle.queryPermission !== "function") {
       return true;
@@ -1346,14 +1409,14 @@
       return;
     }
     if (!state.autoSaveFileHandle) {
-      els.autoSaveStatus.textContent = "自動儲存：未啟用";
+      els.autoSaveStatus.textContent = "自動儲存：未啟用（10秒存檔 / 30秒讀取）";
       return;
     }
     if (!state.lastAutoSaveAt) {
-      els.autoSaveStatus.textContent = "自動儲存：每 5 分鐘";
+      els.autoSaveStatus.textContent = "自動儲存：每10秒（自動讀取每30秒）";
       return;
     }
-    els.autoSaveStatus.textContent = "自動儲存：每 5 分鐘（上次 " + formatDateTime(state.lastAutoSaveAt) + "）";
+    els.autoSaveStatus.textContent = "自動儲存：每10秒（上次 " + formatDateTime(state.lastAutoSaveAt) + "，自動讀取每30秒）";
   }
 
   function handleLoadDataClick() {
@@ -1375,22 +1438,16 @@
       const parsed = JSON.parse(raw);
       const imported = parseBackupPayload(parsed);
       if (!imported) {
-        showToast("資料庫格式不正確。");
+        showToast("資料格式不正確。");
         return;
       }
-      state.tasks = imported.tasks;
-      state.todayOverview = imported.todayOverview;
-      if (state.editingTaskId) {
-        resetTaskForm();
+      const changed = applyImportedBackup(imported, false);
+      if (!changed) {
+        showToast("資料已是最新。");
       }
-      saveTasks();
-      saveTodayOverview();
-      renderTodayOverviewBar();
-      renderAll();
-      showToast("已讀取資料庫，共 " + state.tasks.length + " 筆。");
     } catch (error) {
       console.error("handleLoadDataChange error", error);
-      showToast("讀取資料庫失敗。");
+      showToast("讀取資料失敗。");
     } finally {
       if (input) {
         input.value = "";
@@ -1427,6 +1484,31 @@
         occupancy: state.todayOverview.occupancy || "",
       },
     };
+  }
+
+  function applyImportedBackup(imported, silent) {
+    if (!imported || typeof imported !== "object") {
+      return false;
+    }
+    const tasksChanged = JSON.stringify(state.tasks) !== JSON.stringify(imported.tasks);
+    const overviewChanged = JSON.stringify(state.todayOverview) !== JSON.stringify(imported.todayOverview);
+    if (!tasksChanged && !overviewChanged) {
+      return false;
+    }
+
+    state.tasks = imported.tasks;
+    state.todayOverview = imported.todayOverview;
+    if (state.editingTaskId) {
+      resetTaskForm();
+    }
+    saveTasks();
+    saveTodayOverview();
+    renderTodayOverviewBar();
+    renderAll();
+    if (!silent) {
+      showToast("已讀取資料，共 " + state.tasks.length + " 筆。");
+    }
+    return true;
   }
 
   function parseBackupPayload(payload) {
