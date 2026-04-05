@@ -2124,6 +2124,32 @@
     return mm + "/" + dd;
   }
 
+  function formatExportTaskTime(task) {
+    if (!task) {
+      return "-";
+    }
+    const startAt = getTaskStartAt(task);
+    const endAt = getTaskEndAt(task);
+    if (!startAt && !endAt) {
+      return "-";
+    }
+    if (task.allDay) {
+      return "全天";
+    }
+    if (startAt && endAt) {
+      const start = new Date(startAt);
+      const end = new Date(endAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return formatDueDisplay(task);
+      }
+      if (toDateKey(start) === toDateKey(end)) {
+        return formatTime(start, false) + " 至 " + formatTime(end, false);
+      }
+      return formatDateTime(start) + " 至 " + formatDateTime(end);
+    }
+    return formatTime(startAt || endAt, false);
+  }
+
   function formatExportTaskLine(task, options) {
     const includeDatePrefix = Boolean(options && options.includeDatePrefix);
     const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
@@ -2132,17 +2158,18 @@
     const descText = task.description ? String(task.description).replace(/\s*\n+\s*/g, " / ").trim() : "-";
     return (
       "- " +
-      (includeDatePrefix ? formatExportTaskDate(task) + " | " : "") +
+      (includeDatePrefix ? "日期: " + formatExportTaskDate(task) + " | " : "") +
       (task.title || "-") +
       " | " +
       categoryText +
       " | " +
-      formatDueDisplay(task) +
+      "時間: " +
+      formatExportTaskTime(task) +
       " | 填寫人: " +
       ownerText +
       " | Done: " +
       doneBy +
-      " | 說明: " +
+      " | " +
       descText
     );
   }
