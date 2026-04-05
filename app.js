@@ -1376,11 +1376,14 @@
       if (!imported) {
         return;
       }
-      const merged = mergeBackupState(imported, {
-        tasks: state.tasks,
-        todayOverview: state.todayOverview,
-        deletedTaskIds: state.deletedTaskIds,
-      });
+      const merged = mergeBackupState(
+        {
+          tasks: state.tasks,
+          todayOverview: state.todayOverview,
+          deletedTaskIds: state.deletedTaskIds,
+        },
+        imported,
+      );
       const changed = applyImportedBackup(merged, true);
       if (changed) {
         showToast("已自動讀取最新資料。");
@@ -1417,7 +1420,7 @@
             const parsed = JSON.parse(currentText);
             const existing = parseBackupPayload(parsed);
             if (existing) {
-              merged = mergeBackupState(existing, merged);
+              merged = mergeBackupState(merged, existing);
             }
           }
         } catch (error) {
@@ -1520,11 +1523,14 @@
         showToast("資料格式不正確。");
         return;
       }
-      const merged = mergeBackupState(imported, {
-        tasks: state.tasks,
-        todayOverview: state.todayOverview,
-        deletedTaskIds: state.deletedTaskIds,
-      });
+      const merged = mergeBackupState(
+        {
+          tasks: state.tasks,
+          todayOverview: state.todayOverview,
+          deletedTaskIds: state.deletedTaskIds,
+        },
+        imported,
+      );
       const changed = applyImportedBackup(merged, false);
       if (!changed) {
         showToast("資料已是最新。");
