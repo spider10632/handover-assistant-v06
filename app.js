@@ -8,9 +8,14 @@
     caesarmetro: {
       serverId: "caesarmetro",
       displayName: "caesarmetro",
+      cloudBucket: "7cWAAYbjUk95gHksRVkTp3",
+      cloudKey: "handover-assistant-v07-caesarmetro",
     },
   });
   const DEFAULT_SERVER_ID = "caesarmetro";
+  const CLOUD_API_BASE = "https://kvdb.io";
+  const CLOUD_REQUEST_TIMEOUT_MS = 12000;
+  const CLOUD_PUSH_DEBOUNCE_MS = 1200;
   const BACKUP_TYPE = "handover-backup";
   const BACKUP_VERSION = "0.7";
   const REMINDER_CHECK_MS = 30 * 1000;
@@ -42,6 +47,12 @@
     countdownTimer: null,
     autoSaveFileHandle: null,
     currentServerId: null,
+    cloudInitDone: false,
+    cloudPushTimer: null,
+    cloudPushInFlight: false,
+    cloudPushQueued: false,
+    cloudMutePush: false,
+    cloudLastErrorAt: 0,
     deletedTaskIds: {},
     toastTimer: null,
     initialized: false,
@@ -89,6 +100,7 @@
     renderAll();
     startReminderLoop();
     startCountdownLoop();
+    initCloudSync();
   }
 
   function initAccessGate() {
@@ -132,6 +144,187 @@
   function getScopedStorageKey(baseKey) {
     const serverId = state.currentServerId || DEFAULT_SERVER_ID;
     return baseKey + "__" + serverId;
+  }
+
+  function getCurrentServerConfig() {
+    const serverId = state.currentServerId || DEFAULT_SERVER_ID;
+    const server = USER_SERVER_MAP[serverId];
+    return server && typeof server === "object" ? server : null;
+  }
+
+  function getCurrentCloudUrl() {
+    const server = getCurrentServerConfig();
+    if (!server || !server.cloudBucket || !server.cloudKey) {
+      return "";
+    }
+    return CLOUD_API_BASE + "/" + encodeURIComponent(server.cloudBucket) + "/" + encodeURIComponent(server.cloudKey);
+  }
+
+  async function initCloudSync() {
+    try {
+      await pullCloudBackupAndMerge();
+      state.cloudInitDone = true;
+      await pushCloudBackupNow();
+      showToast("已連線雲端資料庫。");
+    } catch (error) {
+      console.error("initCloudSync error", error);
+      state.cloudInitDone = true;
+      scheduleCloudPush(0);
+      if (Date.now() - state.cloudLastErrorAt > 10000) {
+        state.cloudLastErrorAt = Date.now();
+        showToast("雲端連線失敗，暫用本機資料。");
+      }
+    }
+  }
+
+  async function pullCloudBackupAndMerge() {
+    const url = getCurrentCloudUrl();
+    if (!url) {
+      return false;
+    }
+    const response = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, CLOUD_REQUEST_TIMEOUT_MS);
+    if (response.status === 404) {
+      return false;
+    }
+    if (!response.ok) {
+      throw new Error("cloud pull failed: " + response.status);
+    }
+    const raw = await response.text();
+    if (!raw) {
+      return false;
+    }
+    const parsed = JSON.parse(raw);
+    const imported = parseBackupPayload(parsed);
+    if (!imported) {
+      return false;
+    }
+    const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
+    if (imported.serverId !== currentServerId) {
+      return false;
+    }
+    const merged = mergeBackupState(
+      {
+        tasks: state.tasks,
+        todayOverview: state.todayOverview,
+        deletedTaskIds: state.deletedTaskIds,
+      },
+      imported,
+    );
+    return applyImportedBackup(merged, true);
+  }
+
+  function scheduleCloudPush(delayMs) {
+    const url = getCurrentCloudUrl();
+    if (!url || !state.cloudInitDone || state.cloudMutePush) {
+      return;
+    }
+    const wait = typeof delayMs === "number" ? Math.max(0, delayMs) : CLOUD_PUSH_DEBOUNCE_MS;
+    if (state.cloudPushTimer) {
+      clearTimeout(state.cloudPushTimer);
+    }
+    state.cloudPushTimer = setTimeout(function () {
+      state.cloudPushTimer = null;
+      pushCloudBackupNow();
+    }, wait);
+  }
+
+  async function pushCloudBackupNow() {
+    const url = getCurrentCloudUrl();
+    if (!url || !state.cloudInitDone) {
+      return false;
+    }
+    if (state.cloudPushInFlight) {
+      state.cloudPushQueued = true;
+      return false;
+    }
+    state.cloudPushInFlight = true;
+    try {
+      let merged = {
+        tasks: state.tasks,
+        todayOverview: state.todayOverview,
+        deletedTaskIds: state.deletedTaskIds,
+      };
+      const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
+
+      const existingResponse = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, CLOUD_REQUEST_TIMEOUT_MS);
+      if (existingResponse.ok) {
+        const existingRaw = await existingResponse.text();
+        if (existingRaw) {
+          const existingParsed = JSON.parse(existingRaw);
+          const imported = parseBackupPayload(existingParsed);
+          if (imported && imported.serverId === currentServerId) {
+            merged = mergeBackupState(merged, imported);
+          }
+        }
+      } else if (existingResponse.status !== 404) {
+        throw new Error("cloud read-before-write failed: " + existingResponse.status);
+      }
+
+      state.cloudMutePush = true;
+      try {
+        applyImportedBackup(merged, true);
+      } finally {
+        state.cloudMutePush = false;
+      }
+
+      const payload = {
+        type: BACKUP_TYPE,
+        version: BACKUP_VERSION,
+        serverId: currentServerId,
+        exportedAt: new Date().toISOString(),
+        tasks: merged.tasks.slice(),
+        deletedTaskIds: normalizeDeletedTaskIds(merged.deletedTaskIds),
+        todayOverview: {
+          checkin: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkin),
+          checkout: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkout),
+          occupancy: normalizeOccupancyRateValue(merged.todayOverview && merged.todayOverview.occupancy),
+        },
+      };
+
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+        CLOUD_REQUEST_TIMEOUT_MS,
+      );
+      if (!response.ok) {
+        throw new Error("cloud push failed: " + response.status);
+      }
+      return true;
+    } catch (error) {
+      console.error("pushCloudBackupNow error", error);
+      if (Date.now() - state.cloudLastErrorAt > 10000) {
+        state.cloudLastErrorAt = Date.now();
+        showToast("雲端儲存失敗，請稍後重試。");
+      }
+      return false;
+    } finally {
+      state.cloudPushInFlight = false;
+      if (state.cloudPushQueued) {
+        state.cloudPushQueued = false;
+        scheduleCloudPush(400);
+      }
+    }
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    const timeout = Number.isFinite(timeoutMs) ? timeoutMs : CLOUD_REQUEST_TIMEOUT_MS;
+    if (typeof AbortController !== "function") {
+      return fetch(url, options || {});
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(function () {
+      controller.abort();
+    }, timeout);
+    try {
+      const requestOptions = Object.assign({}, options || {}, { signal: controller.signal });
+      return await fetch(url, requestOptions);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function handlePasswordSubmit(event) {
@@ -519,6 +712,7 @@
 
   function saveTasks() {
     localStorage.setItem(getScopedStorageKey(STORAGE_KEY), JSON.stringify(state.tasks));
+    scheduleCloudPush();
   }
 
   function loadDeletedTaskIds() {
@@ -537,6 +731,7 @@
 
   function saveDeletedTaskIds() {
     localStorage.setItem(getScopedStorageKey(DELETED_TASK_IDS_KEY), JSON.stringify(state.deletedTaskIds || {}));
+    scheduleCloudPush();
   }
 
   function normalizeTask(input) {
@@ -2148,6 +2343,7 @@
 
   function saveTodayOverview() {
     localStorage.setItem(getScopedStorageKey(TODAY_OVERVIEW_KEY), JSON.stringify(state.todayOverview));
+    scheduleCloudPush();
   }
 
   function normalizeTodayOverviewValue(raw) {
