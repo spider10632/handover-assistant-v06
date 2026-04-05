@@ -2170,7 +2170,8 @@
   }
 
   function buildArrDepOccLine(exportDate) {
-    const dateLabel = formatExportDateLabel(exportDate || toDateKey(new Date()));
+    const normalizedDate = normalizeDateInputFromAny(exportDate || state.queryDate || "");
+    const dateLabel = normalizedDate ? formatExportDateLabel(normalizedDate) : "未來待辦事項";
     const arr = String(state.todayOverview && state.todayOverview.checkin ? state.todayOverview.checkin : "-").trim() || "-";
     const dep = String(state.todayOverview && state.todayOverview.checkout ? state.todayOverview.checkout : "-").trim() || "-";
     const occ = normalizeOccForExport(state.todayOverview ? state.todayOverview.occupancy : "");
