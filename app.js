@@ -4,13 +4,17 @@
   const STORAGE_KEY = "handover_tasks_v1";
   const TODAY_OVERVIEW_KEY = "handover_today_overview_v1";
   const DELETED_TASK_IDS_KEY = "handover_deleted_task_ids_v1";
-  const ACCESS_PASSWORD = "caesarmetro";
+  const USER_SERVER_MAP = Object.freeze({
+    caesarmetro: {
+      serverId: "caesarmetro",
+      displayName: "caesarmetro",
+    },
+  });
+  const DEFAULT_SERVER_ID = "caesarmetro";
   const BACKUP_TYPE = "handover-backup";
   const BACKUP_VERSION = "0.7";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
-  const AUTO_SAVE_INTERVAL_MS = 10 * 1000;
-  const AUTO_LOAD_INTERVAL_MS = 30 * 1000;
   const TOAST_MS = 3000;
   const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "餐飲部", "待回覆信件", "公告"];
   const SUBCATEGORY_MAP = {
@@ -36,10 +40,8 @@
     editingTaskId: null,
     reminderTimer: null,
     countdownTimer: null,
-    autoSaveTimer: null,
-    autoLoadTimer: null,
     autoSaveFileHandle: null,
-    lastAutoSaveAt: null,
+    currentServerId: null,
     deletedTaskIds: {},
     toastTimer: null,
     initialized: false,
@@ -58,6 +60,7 @@
     if (state.initialized) {
       return;
     }
+    ensureServerContext();
     state.initialized = true;
     state.tasks = loadTasks();
     state.deletedTaskIds = loadDeletedTaskIds();
@@ -82,13 +85,10 @@
     updateSubcategoryOptions();
     updateFormLockState();
     setDefaultDueTime();
-    updateAutoSaveStatus();
     renderTodayOverviewBar();
     renderAll();
     startReminderLoop();
     startCountdownLoop();
-    startAutoSaveLoop();
-    startAutoLoadLoop();
   }
 
   function initAccessGate() {
@@ -105,15 +105,47 @@
     }, 40);
   }
 
+  function normalizeServerInput(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function resolveServerByInput(value) {
+    const key = normalizeServerInput(value);
+    if (!key) {
+      return null;
+    }
+    const server = USER_SERVER_MAP[key];
+    if (!server || typeof server !== "object") {
+      return null;
+    }
+    return server;
+  }
+
+  function ensureServerContext() {
+    if (state.currentServerId) {
+      return;
+    }
+    const fallback = USER_SERVER_MAP[DEFAULT_SERVER_ID];
+    state.currentServerId = fallback && fallback.serverId ? fallback.serverId : DEFAULT_SERVER_ID;
+  }
+
+  function getScopedStorageKey(baseKey) {
+    const serverId = state.currentServerId || DEFAULT_SERVER_ID;
+    return baseKey + "__" + serverId;
+  }
+
   function handlePasswordSubmit(event) {
     event.preventDefault();
-    const entered = String(els.passwordInput.value || "").trim();
-    if (entered !== ACCESS_PASSWORD) {
+    const entered = normalizeServerInput(els.passwordInput.value || "");
+    const server = resolveServerByInput(entered);
+    if (!server) {
       showPasswordError("使用者錯誤，請再試一次。");
       return;
     }
+    state.currentServerId = server.serverId;
     unlockAccessGate();
     init();
+    showToast("已進入 " + server.displayName + " 伺服器。");
   }
 
   function unlockAccessGate() {
@@ -181,8 +213,6 @@
     els.requestNotificationBtn = document.getElementById("request-notification-btn");
     els.exportDate = document.getElementById("export-date");
     els.exportStatus = document.getElementById("export-status");
-    els.pickAutoSaveFileBtn = document.getElementById("pick-auto-save-file-btn");
-    els.autoSaveStatus = document.getElementById("auto-save-status");
     els.saveDataBtn = document.getElementById("save-data-btn");
     els.loadDataBtn = document.getElementById("load-data-btn");
     els.loadDataInput = document.getElementById("load-data-input");
@@ -231,9 +261,6 @@
     if (els.saveDataBtn) {
       els.saveDataBtn.addEventListener("click", handleSaveData);
     }
-    if (els.pickAutoSaveFileBtn) {
-      els.pickAutoSaveFileBtn.addEventListener("click", handlePickAutoSaveFile);
-    }
     if (els.loadDataBtn) {
       els.loadDataBtn.addEventListener("click", handleLoadDataClick);
     }
@@ -264,9 +291,16 @@
       if (!input) {
         return;
       }
-      if (input.type === "datetime-local") {
-        input.setAttribute("step", "60");
-        input.setAttribute("lang", "en-GB");
+      if (input.type === "text") {
+        input.setAttribute("inputmode", "numeric");
+        input.setAttribute("placeholder", "YYYY-MM-DD HH:mm");
+        input.setAttribute("maxlength", "16");
+        input.setAttribute("pattern", "\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}");
+      } else if (input.type === "date") {
+        input.removeAttribute("inputmode");
+        input.removeAttribute("maxlength");
+        input.removeAttribute("pattern");
+        input.removeAttribute("placeholder");
       }
     });
   }
@@ -354,8 +388,8 @@
     els.allDayBtn.setAttribute("aria-pressed", next ? "true" : "false");
     els.allDayBtn.classList.toggle("active", next);
     els.allDayBtn.textContent = next ? "全日中" : "全日";
-    els.taskStartAt.type = next ? "date" : "datetime-local";
-    els.taskEndAt.type = next ? "date" : "datetime-local";
+    els.taskStartAt.type = next ? "date" : "text";
+    els.taskEndAt.type = next ? "date" : "text";
     apply24HourInputMode();
 
     els.taskStartAt.value = normalizeRangeInputValue(currentStart, next, "start");
@@ -368,12 +402,26 @@
       return "";
     }
     if (allDay) {
-      return currentValue.includes("T") ? currentValue.slice(0, 10) : currentValue;
+      const normalizedDate = currentValue.replace(/\//g, "-");
+      if (normalizedDate.includes("T")) {
+        return normalizedDate.slice(0, 10);
+      }
+      if (normalizedDate.includes(" ")) {
+        return normalizedDate.slice(0, 10);
+      }
+      return normalizedDate;
     }
-    if (currentValue.includes("T")) {
-      return currentValue;
+
+    const parsedMs = parseTaskTimeInput(currentValue, false, part);
+    if (!Number.isNaN(parsedMs)) {
+      return toDateTimeLocalValue(new Date(parsedMs));
     }
-    return currentValue + (part === "end" ? "T18:00" : "T09:00");
+
+    const normalizedDate = currentValue.replace(/\//g, "-");
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(normalizedDate)) {
+      return normalizedDate + (part === "end" ? " 18:00" : " 09:00");
+    }
+    return "";
   }
 
   function updateSubcategoryOptions() {
@@ -454,7 +502,7 @@
 
   function loadTasks() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(getScopedStorageKey(STORAGE_KEY));
       if (!raw) {
         return [];
       }
@@ -470,12 +518,12 @@
   }
 
   function saveTasks() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
+    localStorage.setItem(getScopedStorageKey(STORAGE_KEY), JSON.stringify(state.tasks));
   }
 
   function loadDeletedTaskIds() {
     try {
-      const raw = localStorage.getItem(DELETED_TASK_IDS_KEY);
+      const raw = localStorage.getItem(getScopedStorageKey(DELETED_TASK_IDS_KEY));
       if (!raw) {
         return {};
       }
@@ -488,7 +536,7 @@
   }
 
   function saveDeletedTaskIds() {
-    localStorage.setItem(DELETED_TASK_IDS_KEY, JSON.stringify(state.deletedTaskIds || {}));
+    localStorage.setItem(getScopedStorageKey(DELETED_TASK_IDS_KEY), JSON.stringify(state.deletedTaskIds || {}));
   }
 
   function normalizeTask(input) {
@@ -697,6 +745,7 @@
         }
         task.status = "done";
         task.completedBy = completedBy;
+        task.pinned = false;
       } else {
         task.status = "pending";
         task.remindedAt = null;
@@ -834,12 +883,12 @@
 
     const pinnedList = state.tasks
       .filter(function (task) {
-        return Boolean(task.pinned);
+        return Boolean(task.pinned) && task.status === "pending";
       })
       .sort(sortByDueTime);
 
     const normalList = todayAllList.filter(function (task) {
-      return !task.pinned;
+      return task.status === "pending" && !task.pinned;
     });
 
     const categoryLabel = selectedCategory === "all" ? "全部主分類" : selectedCategory;
@@ -1284,8 +1333,6 @@
           return;
         }
         state.autoSaveFileHandle = handle;
-        state.lastAutoSaveAt = new Date().toISOString();
-        updateAutoSaveStatus();
         showToast("已儲存並覆蓋原本檔案。");
         return;
       } catch (error) {
@@ -1302,94 +1349,6 @@
     } catch (error) {
       console.error("handleSaveData error", error);
       showToast("儲存資料失敗。");
-    }
-  }
-
-  async function handlePickAutoSaveFile() {
-    if (!canUseFileSystemAccessApi()) {
-      showToast("目前瀏覽器不支援直接存到本機檔案。");
-      return;
-    }
-    try {
-      const handle = await window.showSaveFilePicker(buildBackupPickerOptions());
-      const ok = await writeBackupToFileHandle(handle, true);
-      if (!ok) {
-        showToast("無法寫入自動儲存檔案。");
-        return;
-      }
-      state.autoSaveFileHandle = handle;
-      state.lastAutoSaveAt = new Date().toISOString();
-      updateAutoSaveStatus();
-      showToast("已啟用自動儲存（每10秒）與自動讀取（每30秒）。");
-    } catch (error) {
-      if (error && error.name === "AbortError") {
-        return;
-      }
-      console.error("handlePickAutoSaveFile error", error);
-      showToast("選取自動儲存檔案失敗。");
-    }
-  }
-
-  function startAutoSaveLoop() {
-    if (state.autoSaveTimer) {
-      clearInterval(state.autoSaveTimer);
-    }
-    state.autoSaveTimer = setInterval(function () {
-      autoSaveToSelectedFile();
-    }, AUTO_SAVE_INTERVAL_MS);
-  }
-
-  function startAutoLoadLoop() {
-    if (state.autoLoadTimer) {
-      clearInterval(state.autoLoadTimer);
-    }
-    state.autoLoadTimer = setInterval(function () {
-      autoLoadFromSelectedFile();
-    }, AUTO_LOAD_INTERVAL_MS);
-  }
-
-  async function autoSaveToSelectedFile() {
-    if (!state.autoSaveFileHandle) {
-      return;
-    }
-    const ok = await writeBackupToFileHandle(state.autoSaveFileHandle, false);
-    if (!ok) {
-      updateAutoSaveStatus();
-      return;
-    }
-    state.lastAutoSaveAt = new Date().toISOString();
-    updateAutoSaveStatus();
-  }
-
-  async function autoLoadFromSelectedFile() {
-    if (!state.autoSaveFileHandle || typeof state.autoSaveFileHandle.getFile !== "function") {
-      return;
-    }
-    try {
-      const file = await state.autoSaveFileHandle.getFile();
-      const raw = await file.text();
-      if (!raw) {
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      const imported = parseBackupPayload(parsed);
-      if (!imported) {
-        return;
-      }
-      const merged = mergeBackupState(
-        {
-          tasks: state.tasks,
-          todayOverview: state.todayOverview,
-          deletedTaskIds: state.deletedTaskIds,
-        },
-        imported,
-      );
-      const changed = applyImportedBackup(merged, true);
-      if (changed) {
-        showToast("已自動讀取最新資料。");
-      }
-    } catch (error) {
-      console.error("autoLoadFromSelectedFile error", error);
     }
   }
 
@@ -1419,7 +1378,8 @@
           if (currentText) {
             const parsed = JSON.parse(currentText);
             const existing = parseBackupPayload(parsed);
-            if (existing) {
+            const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
+            if (existing && existing.serverId === currentServerId) {
               merged = mergeBackupState(merged, existing);
             }
           }
@@ -1431,6 +1391,7 @@
       const payload = {
         type: BACKUP_TYPE,
         version: BACKUP_VERSION,
+        serverId: state.currentServerId || DEFAULT_SERVER_ID,
         exportedAt: new Date().toISOString(),
         tasks: merged.tasks.slice(),
         deletedTaskIds: normalizeDeletedTaskIds(merged.deletedTaskIds),
@@ -1454,8 +1415,9 @@
   }
 
   function buildBackupPickerOptions() {
+    const serverId = state.currentServerId || DEFAULT_SERVER_ID;
     return {
-      suggestedName: "handover_autosave.json",
+      suggestedName: "handover_" + serverId + ".json",
       types: [
         {
           description: "JSON",
@@ -1486,20 +1448,6 @@
     }
   }
 
-  function updateAutoSaveStatus() {
-    if (!els.autoSaveStatus) {
-      return;
-    }
-    if (!state.autoSaveFileHandle) {
-      els.autoSaveStatus.textContent = "自動儲存：未啟用（10秒存檔 / 30秒讀取）";
-      return;
-    }
-    if (!state.lastAutoSaveAt) {
-      els.autoSaveStatus.textContent = "自動儲存：每10秒（自動讀取每30秒）";
-      return;
-    }
-    els.autoSaveStatus.textContent = "自動儲存：每10秒（上次 " + formatDateTime(state.lastAutoSaveAt) + "，自動讀取每30秒）";
-  }
 
   function handleLoadDataClick() {
     if (!els.loadDataInput) {
@@ -1521,6 +1469,11 @@
       const imported = parseBackupPayload(parsed);
       if (!imported) {
         showToast("資料格式不正確。");
+        return;
+      }
+      const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
+      if (imported.serverId !== currentServerId) {
+        showToast("此資料檔不屬於目前伺服器。");
         return;
       }
       const merged = mergeBackupState(
@@ -1566,6 +1519,7 @@
     return {
       type: BACKUP_TYPE,
       version: BACKUP_VERSION,
+      serverId: state.currentServerId || DEFAULT_SERVER_ID,
       exportedAt: new Date().toISOString(),
       tasks: state.tasks.slice(),
       deletedTaskIds: normalizeDeletedTaskIds(state.deletedTaskIds),
@@ -1610,6 +1564,7 @@
     let rawTasks = [];
     let rawTodayOverview = {};
     let rawDeletedTaskIds = {};
+    let rawServerId = "";
 
     if (Array.isArray(payload)) {
       rawTasks = payload;
@@ -1619,12 +1574,14 @@
         payload.todayOverview && typeof payload.todayOverview === "object" ? payload.todayOverview : {};
       rawDeletedTaskIds =
         payload.deletedTaskIds && typeof payload.deletedTaskIds === "object" ? payload.deletedTaskIds : {};
+      rawServerId = typeof payload.serverId === "string" ? payload.serverId.trim() : "";
     } else {
       return null;
     }
 
     const filtered = filterTasksByDeletedMap(rawTasks.map(normalizeTask).filter(Boolean), rawDeletedTaskIds);
     return {
+      serverId: rawServerId || DEFAULT_SERVER_ID,
       tasks: filtered.tasks,
       todayOverview: {
         checkin: normalizeTodayOverviewValue(rawTodayOverview.checkin),
@@ -1640,7 +1597,8 @@
     const hh = String(now.getHours()).padStart(2, "0");
     const mm = String(now.getMinutes()).padStart(2, "0");
     const ss = String(now.getSeconds()).padStart(2, "0");
-    return "handover_backup_" + toDateKey(now) + "_" + hh + mm + ss + ".json";
+    const serverId = state.currentServerId || DEFAULT_SERVER_ID;
+    return "handover_" + serverId + "_backup_" + toDateKey(now) + "_" + hh + mm + ss + ".json";
   }
 
   async function exportDocx(tasks, conditionText, exportDate, exportStatus) {
@@ -2169,7 +2127,7 @@
       occupancy: "",
     };
     try {
-      const raw = localStorage.getItem(TODAY_OVERVIEW_KEY);
+      const raw = localStorage.getItem(getScopedStorageKey(TODAY_OVERVIEW_KEY));
       if (!raw) {
         return defaults;
       }
@@ -2189,7 +2147,7 @@
   }
 
   function saveTodayOverview() {
-    localStorage.setItem(TODAY_OVERVIEW_KEY, JSON.stringify(state.todayOverview));
+    localStorage.setItem(getScopedStorageKey(TODAY_OVERVIEW_KEY), JSON.stringify(state.todayOverview));
   }
 
   function normalizeTodayOverviewValue(raw) {
@@ -2424,7 +2382,7 @@
     const day = String(date.getDate()).padStart(2, "0");
     const hour = String(date.getHours()).padStart(2, "0");
     const minute = String(date.getMinutes()).padStart(2, "0");
-    return year + "-" + month + "-" + day + "T" + hour + ":" + minute;
+    return year + "-" + month + "-" + day + " " + hour + ":" + minute;
   }
 
   function toDateKey(date) {
@@ -2472,10 +2430,62 @@
     if (!text) {
       return Number.NaN;
     }
+    const normalized = text
+      .replace(/[\uFF0F/]/g, "-")
+      .replace(/\s+/g, " ")
+      .trim();
     if (allDay) {
-      return new Date(text + (part === "end" ? "T23:59" : "T00:00")).getTime();
+      const dayMatch = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (!dayMatch) {
+        return Number.NaN;
+      }
+      return buildDateTimeMs(
+        Number(dayMatch[1]),
+        Number(dayMatch[2]),
+        Number(dayMatch[3]),
+        part === "end" ? 23 : 0,
+        part === "end" ? 59 : 0,
+      );
     }
-    return new Date(text).getTime();
+    const dtMatch = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})$/);
+    if (dtMatch) {
+      return buildDateTimeMs(
+        Number(dtMatch[1]),
+        Number(dtMatch[2]),
+        Number(dtMatch[3]),
+        Number(dtMatch[4]),
+        Number(dtMatch[5]),
+      );
+    }
+
+    const fallbackMs = new Date(text).getTime();
+    return Number.isNaN(fallbackMs) ? Number.NaN : fallbackMs;
+  }
+
+  function buildDateTimeMs(year, month, day, hour, minute) {
+    if (
+      !Number.isFinite(year) ||
+      !Number.isFinite(month) ||
+      !Number.isFinite(day) ||
+      !Number.isFinite(hour) ||
+      !Number.isFinite(minute)
+    ) {
+      return Number.NaN;
+    }
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return Number.NaN;
+    }
+    const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day ||
+      date.getHours() !== hour ||
+      date.getMinutes() !== minute
+    ) {
+      return Number.NaN;
+    }
+    return date.getTime();
   }
 
   function formatDueDisplay(task) {
