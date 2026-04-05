@@ -26,7 +26,7 @@
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
-  const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "預訂", "餐飲部", "待回覆信件", "公告"];
+  const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "預訂", "餐飲部", "待回覆信件", "郵寄", "公告"];
   const SUBCATEGORY_MAP = {
     廣場: ["保留車位", "其他"],
     包裹代收: ["團體", "散客", "其他"],
@@ -49,6 +49,7 @@
     預訂: "7C3AED",
     餐飲部: "9A3412",
     待回覆信件: "1E40AF",
+    郵寄: "7A5A00",
     公告: "334155",
   });
 
@@ -523,7 +524,8 @@
     els.categoryTip = document.getElementById("category-tip");
     els.taskTitle = document.getElementById("task-title");
     els.taskOwner = document.getElementById("task-owner");
-    els.taskDate = document.getElementById("task-date");
+    els.taskStartDate = document.getElementById("task-start-date");
+    els.taskEndDate = document.getElementById("task-end-date");
     els.taskStartAt = document.getElementById("task-start-at");
     els.taskEndAt = document.getElementById("task-end-at");
     els.allDayBtn = document.getElementById("all-day-btn");
@@ -608,8 +610,11 @@
 
   function setDefaultDueTime() {
     setAllDayMode(false);
-    if (els.taskDate) {
-      els.taskDate.value = toDateKey(new Date());
+    if (els.taskStartDate) {
+      els.taskStartDate.value = toDateKey(new Date());
+    }
+    if (els.taskEndDate) {
+      els.taskEndDate.value = "";
     }
     els.taskStartAt.value = "";
     els.taskEndAt.value = "";
@@ -731,40 +736,34 @@
 
   function setAllDayMode(enabled) {
     const next = Boolean(enabled);
+    const currentStartDate = String(els.taskStartDate ? els.taskStartDate.value || "" : "").trim();
+    const currentEndDate = String(els.taskEndDate ? els.taskEndDate.value || "" : "").trim();
     const currentStart = String(els.taskStartAt.value || "").trim();
     const currentEnd = String(els.taskEndAt.value || "").trim();
-    const currentDate = String(els.taskDate ? els.taskDate.value || "" : "").trim();
     state.formAllDay = next;
 
     els.allDayBtn.setAttribute("aria-pressed", next ? "true" : "false");
     els.allDayBtn.classList.toggle("active", next);
     els.allDayBtn.textContent = next ? "全日中" : "全日";
-    els.taskStartAt.type = next ? "date" : "time";
-    els.taskEndAt.type = next ? "date" : "time";
-    if (els.taskDate) {
-      els.taskDate.disabled = next;
-      if (!next && !els.taskDate.value) {
-        els.taskDate.value =
-          normalizeDateInputFromAny(currentDate) ||
-          normalizeDateInputFromAny(currentStart) ||
-          normalizeDateInputFromAny(currentEnd) ||
-          toDateKey(new Date());
-      }
+    els.taskStartAt.disabled = next;
+    els.taskEndAt.disabled = next;
+    if (next) {
+      els.taskStartAt.value = "";
+      els.taskEndAt.value = "";
+    } else {
+      els.taskStartAt.value = normalizeTimeInputFromAny(currentStart, "start");
+      els.taskEndAt.value = normalizeTimeInputFromAny(currentEnd, "end");
+    }
+    if (els.taskStartDate && !els.taskStartDate.value) {
+      els.taskStartDate.value =
+        normalizeDateInputFromAny(currentStartDate) ||
+        normalizeDateInputFromAny(currentEndDate) ||
+        toDateKey(new Date());
+    }
+    if (els.taskEndDate && !els.taskEndDate.value) {
+      els.taskEndDate.value = normalizeDateInputFromAny(currentEndDate);
     }
     apply24HourInputMode();
-
-    if (next) {
-      const baseDate =
-        normalizeDateInputFromAny(currentDate) ||
-        normalizeDateInputFromAny(currentStart) ||
-        normalizeDateInputFromAny(currentEnd) ||
-        toDateKey(new Date());
-      els.taskStartAt.value = normalizeDateInputFromAny(currentStart) || baseDate;
-      els.taskEndAt.value = normalizeDateInputFromAny(currentEnd) || baseDate;
-      return;
-    }
-    els.taskStartAt.value = normalizeTimeInputFromAny(currentStart, "start");
-    els.taskEndAt.value = normalizeTimeInputFromAny(currentEnd, "end");
   }
 
   function normalizeDateInputFromAny(value) {
@@ -859,7 +858,7 @@
     const category = String(els.taskCategory.value || "").trim();
     const subcategory = String(els.taskSubcategory.value || "").trim();
 
-    [els.taskTitle, els.taskOwner, els.taskDate, els.taskStartAt, els.taskEndAt, els.taskPinned, els.taskDescription].forEach(function (el) {
+    [els.taskTitle, els.taskOwner, els.taskStartDate, els.taskEndDate, els.taskStartAt, els.taskEndAt, els.taskPinned, els.taskDescription].forEach(function (el) {
       el.disabled = locked;
     });
     els.allDayBtn.disabled = locked;
@@ -983,13 +982,14 @@
     const title = els.taskTitle.value.trim();
     const owner = els.taskOwner.value.trim();
     const description = els.taskDescription.value.trim();
-    const taskDateInput = String(els.taskDate ? els.taskDate.value || "" : "").trim();
+    const startDateInput = String(els.taskStartDate ? els.taskStartDate.value || "" : "").trim();
+    const endDateInput = String(els.taskEndDate ? els.taskEndDate.value || "" : "").trim();
     const startAtInput = String(els.taskStartAt.value || "").trim();
     const endAtInput = String(els.taskEndAt.value || "").trim();
     const pinned = Boolean(els.taskPinned.checked);
     const allDay = Boolean(state.formAllDay);
     const normalizedSubcategory = normalizeSubcategory(category, subcategory);
-    const range = parseTaskTimeRange(startAtInput, endAtInput, allDay, taskDateInput);
+    const range = parseTaskTimeRange(startDateInput, startAtInput, endDateInput, endAtInput, allDay);
     if (!range.ok) {
       showToast(range.message);
       return;
@@ -1195,17 +1195,20 @@
     setAllDayMode(Boolean(task.allDay));
     const startAt = getTaskStartAt(task);
     const endAt = getTaskEndAt(task);
-    if (els.taskDate) {
+    if (els.taskStartDate) {
       const baseDate = startAt || endAt;
-      els.taskDate.value = baseDate ? toDateKey(new Date(baseDate)) : toDateKey(new Date());
+      els.taskStartDate.value = baseDate ? toDateKey(new Date(baseDate)) : toDateKey(new Date());
+    }
+    if (els.taskEndDate) {
+      els.taskEndDate.value = endAt ? toDateKey(new Date(endAt)) : "";
     }
     if (startAt) {
-      els.taskStartAt.value = task.allDay ? toDateKey(new Date(startAt)) : formatTime(new Date(startAt), false);
+      els.taskStartAt.value = task.allDay ? "" : formatTime(new Date(startAt), false);
     } else {
       els.taskStartAt.value = "";
     }
     if (endAt) {
-      els.taskEndAt.value = task.allDay ? toDateKey(new Date(endAt)) : formatTime(new Date(endAt), false);
+      els.taskEndAt.value = task.allDay ? "" : formatTime(new Date(endAt), false);
     } else {
       els.taskEndAt.value = "";
     }
@@ -2832,18 +2835,60 @@
     return year + "-" + month + "-" + day;
   }
 
-  function parseTaskTimeRange(startInput, endInput, allDay, baseDateInput) {
+  function parseTaskTimeRange(startDateInput, startInput, endDateInput, endInput, allDay) {
+    const startDateText = normalizeDateInputFromAny(startDateInput);
+    const rawEndDateText = normalizeDateInputFromAny(endDateInput);
+    const endDateText = rawEndDateText || startDateText;
     const startText = String(startInput || "").trim();
     const endText = String(endInput || "").trim();
-    const baseDateText = normalizeDateInputFromAny(baseDateInput);
-    if (!allDay && (startText || endText) && !baseDateText) {
+
+    if ((startText || endText || rawEndDateText || allDay) && !startDateText) {
       return {
         ok: false,
-        message: "請先選擇日期。",
+        message: "請先選擇開始日期。",
       };
     }
-    const startMs = parseTaskTimeInput(startText, allDay, "start", baseDateText);
-    const endMs = parseTaskTimeInput(endText, allDay, "end", baseDateText);
+    if (!startDateText && !startText && !endText && !rawEndDateText) {
+      return {
+        ok: true,
+        startAtIso: null,
+        endAtIso: null,
+        message: "",
+      };
+    }
+
+    if (allDay) {
+      const startMs = parseTaskTimeInput(startDateText, true, "start");
+      const endMs = parseTaskTimeInput(endDateText || startDateText, true, "end");
+      if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+        return {
+          ok: false,
+          message: "日期格式無效，請重新選擇。",
+        };
+      }
+      if (endMs < startMs) {
+        return {
+          ok: false,
+          message: "結束日期不可早於開始日期。",
+        };
+      }
+      return {
+        ok: true,
+        startAtIso: new Date(startMs).toISOString(),
+        endAtIso: new Date(endMs).toISOString(),
+        message: "",
+      };
+    }
+
+    let startMs = Number.NaN;
+    let endMs = Number.NaN;
+
+    if (startText) {
+      startMs = parseTaskTimeInput(startText, false, "start", startDateText);
+    }
+    if (endText) {
+      endMs = parseTaskTimeInput(endText, false, "end", endDateText);
+    }
 
     if (startText && Number.isNaN(startMs)) {
       return {
@@ -2857,6 +2902,14 @@
         message: "結束時間格式無效，請重新輸入。",
       };
     }
+
+    if (rawEndDateText && !startText) {
+      startMs = parseTaskTimeInput(startDateText, true, "start");
+    }
+    if (rawEndDateText && !endText) {
+      endMs = parseTaskTimeInput(endDateText, true, "end");
+    }
+
     if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs < startMs) {
       return {
         ok: false,
