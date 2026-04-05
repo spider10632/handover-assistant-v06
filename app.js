@@ -3,9 +3,12 @@
 
   const STORAGE_KEY = "handover_tasks_v1";
   const TODAY_OVERVIEW_KEY = "handover_today_overview_v1";
-  const ACCESS_PASSWORD = "28825252";
+  const ACCESS_PASSWORD = "caesarmetro";
+  const BACKUP_TYPE = "handover-backup";
+  const BACKUP_VERSION = "0.6";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
+  const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000;
   const TOAST_MS = 3000;
   const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "餐飲部", "待回覆信件", "公告"];
   const SUBCATEGORY_MAP = {
@@ -31,6 +34,9 @@
     editingTaskId: null,
     reminderTimer: null,
     countdownTimer: null,
+    autoSaveTimer: null,
+    autoSaveFileHandle: null,
+    lastAutoSaveAt: null,
     toastTimer: null,
     initialized: false,
   };
@@ -64,10 +70,12 @@
     updateSubcategoryOptions();
     updateFormLockState();
     setDefaultDueTime();
+    updateAutoSaveStatus();
     renderTodayOverviewBar();
     renderAll();
     startReminderLoop();
     startCountdownLoop();
+    startAutoSaveLoop();
   }
 
   function initAccessGate() {
@@ -88,7 +96,7 @@
     event.preventDefault();
     const entered = String(els.passwordInput.value || "").trim();
     if (entered !== ACCESS_PASSWORD) {
-      showPasswordError("密碼錯誤，請再試一次。");
+      showPasswordError("使用者錯誤，請再試一次。");
       return;
     }
     unlockAccessGate();
@@ -110,7 +118,7 @@
     if (!els.passwordError) {
       return;
     }
-    els.passwordError.textContent = message || "密碼錯誤。";
+    els.passwordError.textContent = message || "使用者錯誤。";
     els.passwordError.classList.remove("hidden");
   }
 
@@ -133,7 +141,8 @@
     els.categoryTip = document.getElementById("category-tip");
     els.taskTitle = document.getElementById("task-title");
     els.taskOwner = document.getElementById("task-owner");
-    els.taskDueAt = document.getElementById("task-due-at");
+    els.taskStartAt = document.getElementById("task-start-at");
+    els.taskEndAt = document.getElementById("task-end-at");
     els.allDayBtn = document.getElementById("all-day-btn");
     els.taskPinned = document.getElementById("task-pinned");
     els.taskDescription = document.getElementById("task-description");
@@ -159,6 +168,11 @@
     els.requestNotificationBtn = document.getElementById("request-notification-btn");
     els.exportDate = document.getElementById("export-date");
     els.exportStatus = document.getElementById("export-status");
+    els.pickAutoSaveFileBtn = document.getElementById("pick-auto-save-file-btn");
+    els.autoSaveStatus = document.getElementById("auto-save-status");
+    els.saveDataBtn = document.getElementById("save-data-btn");
+    els.loadDataBtn = document.getElementById("load-data-btn");
+    els.loadDataInput = document.getElementById("load-data-input");
     els.taskListFilter = document.getElementById("task-list-filter");
     els.todayAutoDate = document.getElementById("today-auto-date");
     els.todayExpectedCheckin = document.getElementById("today-expected-checkin");
@@ -201,6 +215,18 @@
     els.todayCategoryFilter.addEventListener("change", handleTodayCategoryChange);
     els.exportWordBtn.addEventListener("click", handleExportWord);
     els.requestNotificationBtn.addEventListener("click", requestNotificationPermission);
+    if (els.saveDataBtn) {
+      els.saveDataBtn.addEventListener("click", handleSaveData);
+    }
+    if (els.pickAutoSaveFileBtn) {
+      els.pickAutoSaveFileBtn.addEventListener("click", handlePickAutoSaveFile);
+    }
+    if (els.loadDataBtn) {
+      els.loadDataBtn.addEventListener("click", handleLoadDataClick);
+    }
+    if (els.loadDataInput) {
+      els.loadDataInput.addEventListener("change", handleLoadDataChange);
+    }
     if (els.panelToggleButtons.length > 0) {
       els.panelToggleButtons.forEach(function (btn) {
         btn.addEventListener("click", handlePanelToggle);
@@ -216,7 +242,20 @@
 
   function setDefaultDueTime() {
     setAllDayMode(false);
-    els.taskDueAt.value = "";
+    els.taskStartAt.value = "";
+    els.taskEndAt.value = "";
+  }
+
+  function apply24HourInputMode() {
+    [els.taskStartAt, els.taskEndAt].forEach(function (input) {
+      if (!input) {
+        return;
+      }
+      if (input.type === "datetime-local") {
+        input.setAttribute("step", "60");
+        input.setAttribute("lang", "en-GB");
+      }
+    });
   }
 
   function handleTodayOverviewInput() {
@@ -295,28 +334,33 @@
 
   function setAllDayMode(enabled) {
     const next = Boolean(enabled);
-    const currentValue = String(els.taskDueAt.value || "").trim();
+    const currentStart = String(els.taskStartAt.value || "").trim();
+    const currentEnd = String(els.taskEndAt.value || "").trim();
     state.formAllDay = next;
 
     els.allDayBtn.setAttribute("aria-pressed", next ? "true" : "false");
     els.allDayBtn.classList.toggle("active", next);
     els.allDayBtn.textContent = next ? "全日中" : "全日";
-    els.taskDueAt.type = next ? "date" : "datetime-local";
+    els.taskStartAt.type = next ? "date" : "datetime-local";
+    els.taskEndAt.type = next ? "date" : "datetime-local";
+    apply24HourInputMode();
 
+    els.taskStartAt.value = normalizeRangeInputValue(currentStart, next, "start");
+    els.taskEndAt.value = normalizeRangeInputValue(currentEnd, next, "end");
+  }
+
+  function normalizeRangeInputValue(value, allDay, part) {
+    const currentValue = String(value || "").trim();
     if (!currentValue) {
-      return;
+      return "";
     }
-
-    if (next) {
-      if (currentValue.includes("T")) {
-        els.taskDueAt.value = currentValue.slice(0, 10);
-      }
-      return;
+    if (allDay) {
+      return currentValue.includes("T") ? currentValue.slice(0, 10) : currentValue;
     }
-
-    if (!currentValue.includes("T")) {
-      els.taskDueAt.value = currentValue + "T09:00";
+    if (currentValue.includes("T")) {
+      return currentValue;
     }
+    return currentValue + (part === "end" ? "T18:00" : "T09:00");
   }
 
   function updateSubcategoryOptions() {
@@ -371,7 +415,7 @@
     const category = String(els.taskCategory.value || "").trim();
     const subcategory = String(els.taskSubcategory.value || "").trim();
 
-    [els.taskTitle, els.taskOwner, els.taskDueAt, els.taskPinned, els.taskDescription].forEach(function (el) {
+    [els.taskTitle, els.taskOwner, els.taskStartAt, els.taskEndAt, els.taskPinned, els.taskDescription].forEach(function (el) {
       el.disabled = locked;
     });
     els.allDayBtn.disabled = locked;
@@ -420,9 +464,19 @@
     if (!input || typeof input !== "object") {
       return null;
     }
-    const hasDueAt = Boolean(input.dueAt);
-    const dueMs = hasDueAt ? new Date(input.dueAt).getTime() : Number.NaN;
-    if (hasDueAt && Number.isNaN(dueMs)) {
+    const rawStartAt = input.startAt || input.dueAt || null;
+    const rawEndAt = input.endAt || null;
+    const hasStartAt = Boolean(rawStartAt);
+    const hasEndAt = Boolean(rawEndAt);
+    const startMs = hasStartAt ? new Date(rawStartAt).getTime() : Number.NaN;
+    const endMs = hasEndAt ? new Date(rawEndAt).getTime() : Number.NaN;
+    if (hasStartAt && Number.isNaN(startMs)) {
+      return null;
+    }
+    if (hasEndAt && Number.isNaN(endMs)) {
+      return null;
+    }
+    if (hasStartAt && hasEndAt && endMs < startMs) {
       return null;
     }
     const status = input.status === "done" ? "done" : "pending";
@@ -438,7 +492,9 @@
       owner: String(input.owner || "").trim(),
       completedBy: String(input.completedBy || "").trim(),
       description: String(input.description || "").trim(),
-      dueAt: hasDueAt ? new Date(dueMs).toISOString() : null,
+      startAt: hasStartAt ? new Date(startMs).toISOString() : null,
+      endAt: hasEndAt ? new Date(endMs).toISOString() : null,
+      dueAt: hasStartAt ? new Date(startMs).toISOString() : null,
       allDay: allDay,
       status: status,
       pinned: Boolean(input.pinned),
@@ -460,19 +516,15 @@
     const title = els.taskTitle.value.trim();
     const owner = els.taskOwner.value.trim();
     const description = els.taskDescription.value.trim();
-    const dueAtInput = String(els.taskDueAt.value || "").trim();
+    const startAtInput = String(els.taskStartAt.value || "").trim();
+    const endAtInput = String(els.taskEndAt.value || "").trim();
     const pinned = Boolean(els.taskPinned.checked);
     const allDay = Boolean(state.formAllDay);
     const normalizedSubcategory = normalizeSubcategory(category, subcategory);
-    let dueAtIso = null;
-
-    if (dueAtInput) {
-      const dueMs = allDay ? parseAllDayDateToMs(dueAtInput) : new Date(dueAtInput).getTime();
-      if (Number.isNaN(dueMs)) {
-        showToast("截止時間格式無效，請重新輸入。");
-        return;
-      }
-      dueAtIso = new Date(dueMs).toISOString();
+    const range = parseTaskTimeRange(startAtInput, endAtInput, allDay);
+    if (!range.ok) {
+      showToast(range.message);
+      return;
     }
 
     if (!isValidCategory(category) || !title || !owner) {
@@ -498,7 +550,9 @@
       task.title = title;
       task.owner = owner;
       task.description = description;
-      task.dueAt = dueAtIso;
+      task.startAt = range.startAtIso;
+      task.endAt = range.endAtIso;
+      task.dueAt = range.startAtIso;
       task.allDay = allDay;
       task.pinned = pinned;
       if (task.status === "pending") {
@@ -520,7 +574,9 @@
       owner: owner,
       completedBy: "",
       description: description,
-      dueAt: dueAtIso,
+      startAt: range.startAtIso,
+      endAt: range.endAtIso,
+      dueAt: range.startAtIso,
       allDay: allDay,
       status: "pending",
       pinned: pinned,
@@ -660,12 +716,17 @@
     els.taskTitle.value = task.title;
     els.taskOwner.value = task.owner;
     setAllDayMode(Boolean(task.allDay));
-    if (task.dueAt) {
-      els.taskDueAt.value = task.allDay
-        ? toDateKey(new Date(task.dueAt))
-        : toDateTimeLocalValue(new Date(task.dueAt));
+    const startAt = getTaskStartAt(task);
+    const endAt = getTaskEndAt(task);
+    if (startAt) {
+      els.taskStartAt.value = task.allDay ? toDateKey(new Date(startAt)) : toDateTimeLocalValue(new Date(startAt));
     } else {
-      els.taskDueAt.value = "";
+      els.taskStartAt.value = "";
+    }
+    if (endAt) {
+      els.taskEndAt.value = task.allDay ? toDateKey(new Date(endAt)) : toDateTimeLocalValue(new Date(endAt));
+    } else {
+      els.taskEndAt.value = "";
     }
     els.taskPinned.checked = Boolean(task.pinned);
     els.taskDescription.value = task.description || "";
@@ -725,7 +786,8 @@
         if (selectedCategory !== "all" && task.category !== selectedCategory) {
           return false;
         }
-        return task.dueAt && toDateKey(new Date(task.dueAt)) === todayKey;
+        const startAt = getTaskStartAt(task);
+        return startAt && toDateKey(new Date(startAt)) === todayKey;
       })
       .sort(sortByDueTime);
 
@@ -787,7 +849,7 @@
     const pinTag = task.pinned ? '<span class="today-pill">置頂</span>' : "";
     const pinBtnText = task.pinned ? "取消置頂" : "置頂";
     const doneBtnText = isDone ? "取消完成" : "完成";
-    const countdownText = formatCountdown(task.dueAt, task.allDay, isDone);
+    const countdownText = formatCountdown(getTaskStartAt(task), task.allDay, isDone);
     const completionText = isDone && task.completedBy ? " | 完成人：" + escapeHtml(task.completedBy) : "";
     const metaLineText =
       escapeHtml(task.category) +
@@ -802,7 +864,7 @@
         escapeHtml(task.description).replace(/\n/g, "<br>") +
         "</p>"
       : "";
-    const dueMs = task.dueAt ? new Date(task.dueAt).getTime() : Number.NaN;
+    const dueMs = getTaskStartAt(task) ? new Date(getTaskStartAt(task)).getTime() : Number.NaN;
     const isOverdue = !isDone && !Number.isNaN(dueMs) && dueMs < Date.now();
 
     return (
@@ -822,7 +884,7 @@
       "</span>" +
       pinTag +
       '<span class="today-time">' +
-      formatTime(task.dueAt, task.allDay) +
+      formatTimeRange(task) +
       "</span>" +
       "</div>" +
       '<p class="today-title">' +
@@ -946,11 +1008,11 @@
 
     state.tasks
       .filter(function (task) {
-        return task.status === "pending" && Boolean(task.dueAt) && !task.allDay;
+        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay;
       })
       .sort(sortByDueTime)
       .forEach(function (task) {
-        const diffMs = new Date(task.dueAt).getTime() - now;
+        const diffMs = new Date(getTaskStartAt(task)).getTime() - now;
         if (diffMs < 0) {
           return;
         }
@@ -987,7 +1049,7 @@
     const detailText = task.description
       ? escapeHtml(task.description).replace(/\n/g, "<br>")
       : "（無）";
-    const countdownText = formatCountdown(task.dueAt, task.allDay, false);
+    const countdownText = formatCountdown(getTaskStartAt(task), task.allDay, false);
     const metaLineText =
       escapeHtml(task.category) +
       (task.subcategory ? " / " + escapeHtml(task.subcategory) : "") +
@@ -1003,7 +1065,7 @@
       windowTag +
       "</span>" +
       '<span class="upcoming-time">' +
-      formatTime(task.dueAt) +
+      formatTimeRange(task) +
       "</span>" +
       "</div>" +
       '<p class="upcoming-title">' +
@@ -1012,7 +1074,7 @@
       '<p class="upcoming-meta upcoming-meta-line">' +
       metaLineText +
       "</p>" +
-      '<p class="upcoming-detail"><span class="upcoming-detail-label">截止：</span>' +
+      '<p class="upcoming-detail"><span class="upcoming-detail-label">時間：</span>' +
       escapeHtml(formatDueDisplay(task)) +
       "</p>" +
       '<p class="upcoming-detail"><span class="upcoming-detail-label">內容：</span>' +
@@ -1075,7 +1137,7 @@
 
     const pending = state.tasks
       .filter(function (task) {
-        return task.status === "pending" && Boolean(task.dueAt) && !task.allDay;
+        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay;
       })
       .sort(sortByDueTime);
 
@@ -1085,7 +1147,7 @@
 
     const now = Date.now();
     const dueTask = pending.find(function (task) {
-      const dueMs = new Date(task.dueAt).getTime();
+      const dueMs = new Date(getTaskStartAt(task)).getTime();
       return !task.remindedAt && dueMs <= now;
     });
 
@@ -1147,27 +1209,260 @@
     const exportStatus = normalizeQueryStatus(els.exportStatus ? els.exportStatus.value : "all");
     const list = getTasksByDateAndStatus(exportDate, exportStatus);
     const conditionText = buildConditionText(exportDate, exportStatus);
+    const statusPool = getExportStatusPool(exportStatus);
 
-    if (list.length === 0) {
-      showToast("沒有可匯出的資料。");
+    if (list.length === 0 && statusPool.length === 0) {
+      showToast("No data available for export.");
       return;
     }
 
     if (window.docx && window.saveAs) {
       try {
-        await exportDocx(list, conditionText, exportDate);
-        showToast("Word 檔已匯出。");
+        await exportDocx(list, conditionText, exportDate, exportStatus);
+        showToast("Word file exported.");
         return;
       } catch (error) {
         console.error("exportDocx error", error);
       }
     }
 
-    exportLegacyDoc(list, conditionText, exportDate);
-    showToast("已使用相容模式匯出 Word。");
+    exportLegacyDoc(list, conditionText, exportDate, exportStatus);
+    showToast("Exported via compatibility Word mode.");
   }
 
-  async function exportDocx(tasks, conditionText, exportDate) {
+  function handleSaveData() {
+    try {
+      const filename = buildBackupFileName();
+      downloadBackupFile(filename);
+      showToast("已將資料儲存到電腦。");
+    } catch (error) {
+      console.error("handleSaveData error", error);
+      showToast("儲存資料失敗。");
+    }
+  }
+
+  async function handlePickAutoSaveFile() {
+    if (!canUseFileSystemAccessApi()) {
+      showToast("目前瀏覽器不支援自動儲存到本機檔案。");
+      return;
+    }
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: "handover_autosave.json",
+        types: [
+          {
+            description: "JSON",
+            accept: {
+              "application/json": [".json"],
+            },
+          },
+        ],
+      });
+      const ok = await writeBackupToFileHandle(handle, true);
+      if (!ok) {
+        showToast("自動儲存檔案未授權，無法啟用。");
+        return;
+      }
+      state.autoSaveFileHandle = handle;
+      state.lastAutoSaveAt = new Date().toISOString();
+      updateAutoSaveStatus();
+      showToast("已啟用每 5 分鐘自動儲存。");
+    } catch (error) {
+      if (error && error.name === "AbortError") {
+        return;
+      }
+      console.error("handlePickAutoSaveFile error", error);
+      showToast("選取自動儲存檔案失敗。");
+    }
+  }
+
+  function startAutoSaveLoop() {
+    if (state.autoSaveTimer) {
+      clearInterval(state.autoSaveTimer);
+    }
+    state.autoSaveTimer = setInterval(function () {
+      autoSaveToSelectedFile();
+    }, AUTO_SAVE_INTERVAL_MS);
+  }
+
+  async function autoSaveToSelectedFile() {
+    if (!state.autoSaveFileHandle) {
+      return;
+    }
+    const ok = await writeBackupToFileHandle(state.autoSaveFileHandle, false);
+    if (!ok) {
+      updateAutoSaveStatus();
+      return;
+    }
+    state.lastAutoSaveAt = new Date().toISOString();
+    updateAutoSaveStatus();
+  }
+
+  function canUseFileSystemAccessApi() {
+    return typeof window.showSaveFilePicker === "function" && window.isSecureContext;
+  }
+
+  async function writeBackupToFileHandle(handle, allowPermissionPrompt) {
+    if (!handle || typeof handle.createWritable !== "function") {
+      return false;
+    }
+    const granted = await ensureFileHandlePermission(handle, allowPermissionPrompt);
+    if (!granted) {
+      return false;
+    }
+    try {
+      const json = JSON.stringify(buildBackupPayload(), null, 2);
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return true;
+    } catch (error) {
+      console.error("writeBackupToFileHandle error", error);
+      return false;
+    }
+  }
+
+  async function ensureFileHandlePermission(handle, allowPermissionPrompt) {
+    if (!handle || typeof handle.queryPermission !== "function") {
+      return true;
+    }
+    try {
+      const query = await handle.queryPermission({ mode: "readwrite" });
+      if (query === "granted") {
+        return true;
+      }
+      if (!allowPermissionPrompt || typeof handle.requestPermission !== "function") {
+        return false;
+      }
+      const request = await handle.requestPermission({ mode: "readwrite" });
+      return request === "granted";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function updateAutoSaveStatus() {
+    if (!els.autoSaveStatus) {
+      return;
+    }
+    if (!state.autoSaveFileHandle) {
+      els.autoSaveStatus.textContent = "自動儲存：未啟用";
+      return;
+    }
+    if (!state.lastAutoSaveAt) {
+      els.autoSaveStatus.textContent = "自動儲存：每 5 分鐘";
+      return;
+    }
+    els.autoSaveStatus.textContent = "自動儲存：每 5 分鐘（上次 " + formatDateTime(state.lastAutoSaveAt) + "）";
+  }
+
+  function handleLoadDataClick() {
+    if (!els.loadDataInput) {
+      return;
+    }
+    els.loadDataInput.value = "";
+    els.loadDataInput.click();
+  }
+
+  async function handleLoadDataChange(event) {
+    const input = event && event.target ? event.target : null;
+    const file = input && input.files && input.files[0] ? input.files[0] : null;
+    if (!file) {
+      return;
+    }
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw);
+      const imported = parseBackupPayload(parsed);
+      if (!imported) {
+        showToast("資料庫格式不正確。");
+        return;
+      }
+      state.tasks = imported.tasks;
+      state.todayOverview = imported.todayOverview;
+      if (state.editingTaskId) {
+        resetTaskForm();
+      }
+      saveTasks();
+      saveTodayOverview();
+      renderTodayOverviewBar();
+      renderAll();
+      showToast("已讀取資料庫，共 " + state.tasks.length + " 筆。");
+    } catch (error) {
+      console.error("handleLoadDataChange error", error);
+      showToast("讀取資料庫失敗。");
+    } finally {
+      if (input) {
+        input.value = "";
+      }
+    }
+  }
+
+  function downloadBackupFile(filename) {
+    const payload = buildBackupPayload();
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+    if (window.saveAs) {
+      window.saveAs(blob, filename);
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function buildBackupPayload() {
+    return {
+      type: BACKUP_TYPE,
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      tasks: state.tasks.slice(),
+      todayOverview: {
+        checkin: state.todayOverview.checkin || "",
+        checkout: state.todayOverview.checkout || "",
+        occupancy: state.todayOverview.occupancy || "",
+      },
+    };
+  }
+
+  function parseBackupPayload(payload) {
+    let rawTasks = [];
+    let rawTodayOverview = {};
+
+    if (Array.isArray(payload)) {
+      rawTasks = payload;
+    } else if (payload && typeof payload === "object") {
+      rawTasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+      rawTodayOverview =
+        payload.todayOverview && typeof payload.todayOverview === "object" ? payload.todayOverview : {};
+    } else {
+      return null;
+    }
+
+    const tasks = rawTasks.map(normalizeTask).filter(Boolean).sort(sortByDueTime);
+    return {
+      tasks: tasks,
+      todayOverview: {
+        checkin: normalizeTodayOverviewValue(rawTodayOverview.checkin),
+        checkout: normalizeTodayOverviewValue(rawTodayOverview.checkout),
+        occupancy: normalizeOccupancyRateValue(rawTodayOverview.occupancy),
+      },
+    };
+  }
+
+  function buildBackupFileName() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    const ss = String(now.getSeconds()).padStart(2, "0");
+    return "handover_backup_" + toDateKey(now) + "_" + hh + mm + ss + ".json";
+  }
+
+  async function exportDocx(tasks, conditionText, exportDate, exportStatus) {
     const docxLib = window.docx;
     const Document = docxLib.Document;
     const Packer = docxLib.Packer;
@@ -1177,60 +1472,85 @@
     const TableCell = docxLib.TableCell;
     const TableRow = docxLib.TableRow;
     const WidthType = docxLib.WidthType;
-    const TextRun = docxLib.TextRun;
+    const AlignmentType = docxLib.AlignmentType;
+    const BorderStyle = docxLib.BorderStyle;
 
-    const rows = [];
-    rows.push(
-      new TableRow({
-        children: [
-          headerCell("狀態", TextRun, Paragraph, TableCell),
-          headerCell("置頂", TextRun, Paragraph, TableCell),
-          headerCell("主分類", TextRun, Paragraph, TableCell),
-          headerCell("子分類", TextRun, Paragraph, TableCell),
-          headerCell("事項", TextRun, Paragraph, TableCell),
-          headerCell("填寫人", TextRun, Paragraph, TableCell),
-          headerCell("完成人", TextRun, Paragraph, TableCell),
-          headerCell("截止時間", TextRun, Paragraph, TableCell),
-          headerCell("交接說明", TextRun, Paragraph, TableCell),
-        ],
-      })
-    );
+    const statusPool = getExportStatusPool(exportStatus);
+    const sections = buildExportSections(tasks, statusPool, exportDate);
 
-    tasks.forEach(function (task) {
-      rows.push(
-        new TableRow({
-          children: [
-            textCell(task.status === "done" ? "已完成" : "待處理", Paragraph, TableCell),
-            textCell(task.pinned ? "是" : "否", Paragraph, TableCell),
-            textCell(task.category, Paragraph, TableCell),
-            textCell(task.subcategory || "-", Paragraph, TableCell),
-            textCell(task.title, Paragraph, TableCell),
-            textCell(task.owner, Paragraph, TableCell),
-            textCell(task.status === "done" ? task.completedBy || "-" : "-", Paragraph, TableCell),
-            textCell(formatDueDisplay(task), Paragraph, TableCell),
-            textCell(task.description || "-", Paragraph, TableCell),
-          ],
-        })
-      );
-    });
+    const rows = [
+      createExportSectionRow("Attention to All\nNotices", sections.attention, {
+        Paragraph: Paragraph,
+        TableCell: TableCell,
+        TableRow: TableRow,
+        WidthType: WidthType,
+        AlignmentType: AlignmentType,
+        BorderStyle: BorderStyle,
+      }),
+      createExportSectionRow("Daily Briefing\nDaily Tasks", sections.daily, {
+        Paragraph: Paragraph,
+        TableCell: TableCell,
+        TableRow: TableRow,
+        WidthType: WidthType,
+        AlignmentType: AlignmentType,
+        BorderStyle: BorderStyle,
+      }),
+      createExportSectionRow("Banquets & Sales\nEvents", sections.banquets, {
+        Paragraph: Paragraph,
+        TableCell: TableCell,
+        TableRow: TableRow,
+        WidthType: WidthType,
+        AlignmentType: AlignmentType,
+        BorderStyle: BorderStyle,
+      }),
+      createExportSectionRow("Future Follow Up\nUpcoming Tasks", sections.future, {
+        Paragraph: Paragraph,
+        TableCell: TableCell,
+        TableRow: TableRow,
+        WidthType: WidthType,
+        AlignmentType: AlignmentType,
+        BorderStyle: BorderStyle,
+      }),
+      createExportMergedRow(["Internal Transfer Items"], {
+        Paragraph: Paragraph,
+        TableCell: TableCell,
+        TableRow: TableRow,
+        WidthType: WidthType,
+        AlignmentType: AlignmentType,
+        BorderStyle: BorderStyle,
+        center: true,
+      }),
+      createExportMergedRow(buildTransferFyiLines(sections.transfer, sections.fyi), {
+        Paragraph: Paragraph,
+        TableCell: TableCell,
+        TableRow: TableRow,
+        WidthType: WidthType,
+        AlignmentType: AlignmentType,
+        BorderStyle: BorderStyle,
+        center: false,
+      }),
+    ];
 
-    const reportDate = conditionText;
     const document = new Document({
       sections: [
         {
           properties: {},
           children: [
-            new Paragraph({ text: "工作交接清單", heading: HeadingLevel.HEADING_1 }),
-            new Paragraph({ text: "匯出時間：" + formatDateTime(new Date().toISOString()) }),
-            new Paragraph({ text: "查詢條件：" + reportDate }),
+            new Paragraph({ text: "Handover Report", heading: HeadingLevel.HEADING_1 }),
+            new Paragraph({ text: "Export Time: " + formatDateTime(new Date().toISOString()) }),
+            new Paragraph({ text: "Filters: " + conditionText }),
             new Paragraph({ text: "" }),
             new Table({
-              rows: rows,
               width: {
                 size: 100,
                 type: WidthType.PERCENTAGE,
               },
+              columnWidths: [1900, 9000],
+              borders: createExportBorders(BorderStyle),
+              rows: rows,
             }),
+            new Paragraph({ text: "" }),
+            new Paragraph({ text: buildArrDepOccLine(exportDate) }),
           ],
         },
       ],
@@ -1240,82 +1560,280 @@
     window.saveAs(blob, buildExportFileName("docx", exportDate));
   }
 
-  function headerCell(text, TextRun, Paragraph, TableCell) {
-    return new TableCell({
-      children: [
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: text,
-              bold: true,
-            }),
-          ],
-        }),
-      ],
-    });
-  }
-
-  function textCell(text, Paragraph, TableCell) {
-    return new TableCell({
-      children: [
-        new Paragraph({
-          text: text || "-",
-        }),
-      ],
-    });
-  }
-
-  function exportLegacyDoc(tasks, conditionText, exportDate) {
-    const rowsHtml = tasks
-      .map(function (task) {
-        return (
-          "<tr>" +
-          "<td>" +
-          escapeHtml(task.status === "done" ? "已完成" : "待處理") +
-          "</td>" +
-          "<td>" +
-          escapeHtml(task.pinned ? "是" : "否") +
-          "</td>" +
-          "<td>" +
-          escapeHtml(task.category) +
-          "</td>" +
-          "<td>" +
-          escapeHtml(task.subcategory || "-") +
-          "</td>" +
-          "<td>" +
-          escapeHtml(task.title) +
-          "</td>" +
-          "<td>" +
-          escapeHtml(task.owner) +
-          "</td>" +
-          "<td>" +
-          escapeHtml(task.status === "done" ? task.completedBy || "-" : "-") +
-          "</td>" +
-          "<td>" +
-          escapeHtml(formatDueDisplay(task)) +
-          "</td>" +
-          "<td>" +
-          escapeHtml(task.description || "-") +
-          "</td>" +
-          "</tr>"
-        );
+  function createExportSectionRow(title, tasks, tools) {
+    const titleLines = String(title || "")
+      .split("\n")
+      .map(function (line) {
+        return line.trim();
       })
-      .join("");
+      .filter(Boolean);
+
+    return new tools.TableRow({
+      children: [
+        new tools.TableCell({
+          width: {
+            size: 1900,
+            type: tools.WidthType.DXA,
+          },
+          borders: createExportBorders(tools.BorderStyle),
+          children: createExportParagraphs(titleLines, tools.Paragraph, {
+            alignment: tools.AlignmentType.CENTER,
+          }),
+        }),
+        new tools.TableCell({
+          width: {
+            size: 9000,
+            type: tools.WidthType.DXA,
+          },
+          borders: createExportBorders(tools.BorderStyle),
+          children: createExportParagraphs(buildExportTaskLines(tasks), tools.Paragraph, {
+            alignment: tools.AlignmentType.LEFT,
+          }),
+        }),
+      ],
+    });
+  }
+
+  function createExportMergedRow(lines, tools) {
+    return new tools.TableRow({
+      children: [
+        new tools.TableCell({
+          columnSpan: 2,
+          width: {
+            size: 10900,
+            type: tools.WidthType.DXA,
+          },
+          borders: createExportBorders(tools.BorderStyle),
+          children: createExportParagraphs(lines, tools.Paragraph, {
+            alignment: tools.center ? tools.AlignmentType.CENTER : tools.AlignmentType.LEFT,
+          }),
+        }),
+      ],
+    });
+  }
+
+  function createExportParagraphs(lines, Paragraph, options) {
+    const list = Array.isArray(lines) ? lines.filter(Boolean) : [];
+    const align = options && options.alignment ? options.alignment : undefined;
+    if (list.length === 0) {
+      return [new Paragraph({ text: "(none)", alignment: align })];
+    }
+    return list.map(function (line) {
+      return new Paragraph({
+        text: String(line),
+        alignment: align,
+      });
+    });
+  }
+
+  function createExportBorders(BorderStyle) {
+    return {
+      top: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+      bottom: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+      left: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+      right: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+      insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+    };
+  }
+
+  function getExportStatusPool(exportStatus) {
+    const normalizedStatus = normalizeQueryStatus(exportStatus);
+    return state.tasks
+      .slice()
+      .filter(function (task) {
+        if (normalizedStatus === "all") {
+          return true;
+        }
+        return task.status === normalizedStatus;
+      })
+      .sort(sortForTaskTable);
+  }
+
+  function buildExportSections(currentList, statusPool, exportDate) {
+    const targetDate = exportDate || toDateKey(new Date());
+    const endOfTargetDay = new Date(targetDate + "T23:59:59").getTime();
+
+    const attention = statusPool.filter(function (task) {
+      return task.category === CATEGORIES[9];
+    });
+
+    const daily = (Array.isArray(currentList) ? currentList.slice() : []).sort(sortForTaskTable);
+
+    const banquets = statusPool.filter(function (task) {
+      return task.category === CATEGORIES[4] || task.category === CATEGORIES[5] || task.category === CATEGORIES[7];
+    });
+
+    const future = statusPool.filter(function (task) {
+      const startAt = getTaskStartAt(task);
+      if (!startAt) {
+        return false;
+      }
+      return new Date(startAt).getTime() > endOfTargetDay;
+    });
+
+    const transfer = statusPool.filter(function (task) {
+      return task.category === CATEGORIES[1];
+    });
+
+    const used = new Set();
+    [attention, daily, banquets, future, transfer].forEach(function (list) {
+      list.forEach(function (task) {
+        if (task && task.id) {
+          used.add(task.id);
+        }
+      });
+    });
+
+    const fyi = statusPool.filter(function (task) {
+      return !used.has(task.id);
+    });
+
+    return {
+      attention: attention,
+      daily: daily,
+      banquets: banquets,
+      future: future,
+      transfer: transfer,
+      fyi: fyi,
+    };
+  }
+
+  function buildExportTaskLines(tasks) {
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return [];
+    }
+    return tasks.map(formatExportTaskLine);
+  }
+
+  function formatExportTaskLine(task) {
+    const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
+    const statusText = task.status === "done" ? "Done" : "Pending";
+    const completedByText = task.status === "done" && task.completedBy ? " | Completed By: " + task.completedBy : "";
+    const descText = task.description ? " | " + task.description : "";
+    return (
+      "- " +
+      (task.title || "-") +
+      " | " +
+      categoryText +
+      " | " +
+      formatDueDisplay(task) +
+      " | Owner: " +
+      (task.owner || "-") +
+      " | " +
+      statusText +
+      completedByText +
+      descText
+    );
+  }
+
+  function buildTransferFyiLines(transferTasks, fyiTasks) {
+    const lines = [];
+    const transferLines = buildExportTaskLines(transferTasks);
+    const fyiLines = buildExportTaskLines(fyiTasks);
+
+    if (transferLines.length > 0) {
+      lines.push("[Internal Transfer]");
+      transferLines.forEach(function (line) {
+        lines.push(line);
+      });
+    }
+
+    if (fyiLines.length > 0) {
+      if (lines.length > 0) {
+        lines.push("");
+      }
+      lines.push("[F.Y.I.]");
+      fyiLines.forEach(function (line) {
+        lines.push(line);
+      });
+    }
+
+    return lines;
+  }
+
+  function buildArrDepOccLine(exportDate) {
+    const dateLabel = formatExportDateLabel(exportDate || toDateKey(new Date()));
+    const arr = String(state.todayOverview && state.todayOverview.checkin ? state.todayOverview.checkin : "-").trim() || "-";
+    const dep = String(state.todayOverview && state.todayOverview.checkout ? state.todayOverview.checkout : "-").trim() || "-";
+    const occ = normalizeOccForExport(state.todayOverview ? state.todayOverview.occupancy : "");
+    return dateLabel + "     Arr: " + arr + "   Dep: " + dep + "   OCC: " + occ;
+  }
+
+  function normalizeOccForExport(value) {
+    const text = String(value || "").replace(/%/g, "").trim();
+    if (!text) {
+      return "-";
+    }
+    return text + " %";
+  }
+
+  function formatExportDateLabel(dateValue) {
+    const normalized = String(dateValue || "").trim();
+    if (!normalized) {
+      return formatDateOnly(new Date());
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      return normalized.replace(/-/g, "/");
+    }
+    return formatDateOnly(normalized);
+  }
+
+  function exportLegacyDoc(tasks, conditionText, exportDate, exportStatus) {
+    const statusPool = getExportStatusPool(exportStatus);
+    const sections = buildExportSections(tasks, statusPool, exportDate);
+
+    function toHtmlLines(lines) {
+      if (!Array.isArray(lines) || lines.length === 0) {
+        return "(none)";
+      }
+      return lines
+        .map(function (line) {
+          return escapeHtml(line);
+        })
+        .join("<br>");
+    }
 
     const html =
-      "<html><head><meta charset='utf-8'></head><body>" +
-      "<h2>工作交接清單</h2>" +
-      "<p>匯出時間：" +
+      "<html><head><meta charset='utf-8'><style>" +
+      "body{font-family:'DFKai-SB','Noto Serif TC',serif;padding:16px;color:#111;}" +
+      "h2{margin:0 0 8px 0;}" +
+      "p{margin:4px 0;}" +
+      "table{width:100%;border-collapse:collapse;table-layout:fixed;}" +
+      "td{border:1px solid #000;padding:8px;vertical-align:top;line-height:1.45;}" +
+      ".left{width:160px;text-align:center;font-weight:700;}" +
+      ".merge-title{text-align:center;font-weight:700;background:#efefef;}" +
+      ".arrdepocc{margin-top:12px;font-weight:700;}" +
+      "</style></head><body>" +
+      "<h2>Handover Report</h2>" +
+      "<p>Export Time: " +
       escapeHtml(formatDateTime(new Date().toISOString())) +
       "</p>" +
-      "<p>查詢條件：" +
+      "<p>Filters: " +
       escapeHtml(conditionText) +
       "</p>" +
-      "<table border='1' cellspacing='0' cellpadding='6'>" +
-      "<thead><tr><th>狀態</th><th>置頂</th><th>主分類</th><th>子分類</th><th>事項</th><th>填寫人</th><th>完成人</th><th>截止時間</th><th>交接說明</th></tr></thead>" +
-      "<tbody>" +
-      rowsHtml +
-      "</tbody></table></body></html>";
+      "<table>" +
+      "<tr><td class='left'>Attention to All<br>Notices</td><td>" +
+      toHtmlLines(buildExportTaskLines(sections.attention)) +
+      "</td></tr>" +
+      "<tr><td class='left'>Daily Briefing<br>Daily Tasks</td><td>" +
+      toHtmlLines(buildExportTaskLines(sections.daily)) +
+      "</td></tr>" +
+      "<tr><td class='left'>Banquets &amp; Sales<br>Events</td><td>" +
+      toHtmlLines(buildExportTaskLines(sections.banquets)) +
+      "</td></tr>" +
+      "<tr><td class='left'>Future Follow Up<br>Upcoming Tasks</td><td>" +
+      toHtmlLines(buildExportTaskLines(sections.future)) +
+      "</td></tr>" +
+      "<tr><td colspan='2' class='merge-title'>Internal Transfer Items</td></tr>" +
+      "<tr><td colspan='2'>" +
+      toHtmlLines(buildTransferFyiLines(sections.transfer, sections.fyi)) +
+      "</td></tr>" +
+      "</table>" +
+      "<p class='arrdepocc'>" +
+      escapeHtml(buildArrDepOccLine(exportDate)) +
+      "</p>" +
+      "</body></html>";
 
     const blob = new Blob(["\ufeff", html], {
       type: "application/msword;charset=utf-8",
@@ -1379,7 +1897,8 @@
     let list = state.tasks.slice().sort(sortForTaskTable);
     if (dateValue) {
       list = list.filter(function (task) {
-        return task.dueAt && toDateKey(new Date(task.dueAt)) === dateValue;
+        const startAt = getTaskStartAt(task);
+        return startAt && toDateKey(new Date(startAt)) === dateValue;
       });
     }
     if (statusValue !== "all") {
@@ -1414,7 +1933,7 @@
     if (isDone) {
       lines.push("完成人：" + (task.completedBy || "-"));
     }
-    lines.push("時間：" + formatTime(task.dueAt, task.allDay));
+    lines.push("時間：" + formatTimeRange(task));
     lines.push("內容：" + (task.description || "-"));
     return lines.join("\n");
   }
@@ -1518,9 +2037,25 @@
     return "task_" + Date.now() + "_" + Math.random().toString(16).slice(2);
   }
 
+  function getTaskStartAt(task) {
+    if (!task) {
+      return null;
+    }
+    return task.startAt || task.dueAt || null;
+  }
+
+  function getTaskEndAt(task) {
+    if (!task) {
+      return null;
+    }
+    return task.endAt || null;
+  }
+
   function sortByDueTime(a, b) {
-    const aMs = a.dueAt ? new Date(a.dueAt).getTime() : Number.POSITIVE_INFINITY;
-    const bMs = b.dueAt ? new Date(b.dueAt).getTime() : Number.POSITIVE_INFINITY;
+    const aStartAt = getTaskStartAt(a);
+    const bStartAt = getTaskStartAt(b);
+    const aMs = aStartAt ? new Date(aStartAt).getTime() : Number.POSITIVE_INFINITY;
+    const bMs = bStartAt ? new Date(bStartAt).getTime() : Number.POSITIVE_INFINITY;
     return aMs - bMs;
   }
 
@@ -1580,22 +2115,82 @@
     return year + "-" + month + "-" + day;
   }
 
-  function parseAllDayDateToMs(dateInput) {
-    const value = String(dateInput || "").trim();
-    if (!value) {
+  function parseTaskTimeRange(startInput, endInput, allDay) {
+    const startText = String(startInput || "").trim();
+    const endText = String(endInput || "").trim();
+    const startMs = parseTaskTimeInput(startText, allDay, "start");
+    const endMs = parseTaskTimeInput(endText, allDay, "end");
+
+    if (startText && Number.isNaN(startMs)) {
+      return {
+        ok: false,
+        message: "開始時間格式無效，請重新輸入。",
+      };
+    }
+    if (endText && Number.isNaN(endMs)) {
+      return {
+        ok: false,
+        message: "結束時間格式無效，請重新輸入。",
+      };
+    }
+    if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs < startMs) {
+      return {
+        ok: false,
+        message: "結束時間不可早於開始時間。",
+      };
+    }
+
+    return {
+      ok: true,
+      startAtIso: Number.isNaN(startMs) ? null : new Date(startMs).toISOString(),
+      endAtIso: Number.isNaN(endMs) ? null : new Date(endMs).toISOString(),
+      message: "",
+    };
+  }
+
+  function parseTaskTimeInput(value, allDay, part) {
+    const text = String(value || "").trim();
+    if (!text) {
       return Number.NaN;
     }
-    return new Date(value + "T23:59").getTime();
+    if (allDay) {
+      return new Date(text + (part === "end" ? "T23:59" : "T00:00")).getTime();
+    }
+    return new Date(text).getTime();
   }
 
   function formatDueDisplay(task) {
-    if (!task || !task.dueAt) {
+    if (!task) {
+      return "-";
+    }
+    const startAt = getTaskStartAt(task);
+    const endAt = getTaskEndAt(task);
+    if (!startAt && !endAt) {
       return "-";
     }
     if (task.allDay) {
-      return formatDateOnly(task.dueAt) + " 全天";
+      if (startAt && endAt) {
+        const startDate = toDateKey(new Date(startAt));
+        const endDate = toDateKey(new Date(endAt));
+        if (startDate === endDate) {
+          return formatDateOnly(startAt) + " 全天";
+        }
+        return formatDateOnly(startAt) + " 至 " + formatDateOnly(endAt) + " 全天";
+      }
+      const allDayBase = startAt || endAt;
+      return formatDateOnly(allDayBase) + " 全天";
     }
-    return formatDateTime(task.dueAt);
+    if (startAt && endAt) {
+      const sameDate = toDateKey(new Date(startAt)) === toDateKey(new Date(endAt));
+      if (sameDate) {
+        return formatDateOnly(startAt) + " " + formatTime(startAt, false) + " 至 " + formatTime(endAt, false);
+      }
+      return formatDateTime(startAt) + " 至 " + formatDateTime(endAt);
+    }
+    if (startAt) {
+      return formatDateTime(startAt);
+    }
+    return formatDateTime(endAt);
   }
 
   function formatDateTime(input) {
@@ -1644,6 +2239,24 @@
     return hour + ":" + minute;
   }
 
+  function formatTimeRange(task) {
+    if (!task) {
+      return "--:--";
+    }
+    if (task.allDay) {
+      return "全天";
+    }
+    const startAt = getTaskStartAt(task);
+    const endAt = getTaskEndAt(task);
+    if (!startAt && !endAt) {
+      return "--:--";
+    }
+    if (startAt && endAt) {
+      return formatTime(startAt, false) + " 至 " + formatTime(endAt, false);
+    }
+    return formatTime(startAt || endAt, false);
+  }
+
   function formatCountdown(input, allDay, isDone) {
     if (isDone) {
       return "已完成";
@@ -1652,11 +2265,11 @@
       return "全天事項";
     }
     if (!input) {
-      return "無截止時間";
+      return "無時間";
     }
     const dueMs = input instanceof Date ? input.getTime() : new Date(input).getTime();
     if (Number.isNaN(dueMs)) {
-      return "無截止時間";
+      return "無時間";
     }
     const diffSec = Math.floor((dueMs - Date.now()) / 1000);
     if (diffSec >= 0) {
@@ -1700,3 +2313,4 @@
     }, TOAST_MS);
   }
 })();
+
