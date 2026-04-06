@@ -272,6 +272,16 @@ h2 {
   gap: 12px;
 }
 
+.task-time-field {
+  grid-column: span 2;
+}
+
+.task-owner-field {
+  width: 100%;
+  max-width: 260px;
+  justify-self: end;
+}
+
 .form-actions {
   display: flex;
   align-items: center;
@@ -1042,6 +1052,15 @@ td {
 @media (max-width: 1024px) {
   .task-form {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .task-time-field {
+    grid-column: 1 / -1;
+  }
+
+  .task-owner-field {
+    max-width: none;
+    justify-self: stretch;
   }
 
   table {
