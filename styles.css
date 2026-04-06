@@ -441,6 +441,11 @@ textarea {
   line-height: 1.2;
 }
 
+#today-occupancy-rate {
+  width: 84px;
+  min-width: 84px;
+}
+
 .today-pinned-zone {
   margin: 0 0 12px;
   padding: 11px;

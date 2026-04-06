@@ -583,7 +583,8 @@
       els.todayExpectedCheckout.addEventListener("input", handleTodayOverviewInput);
     }
     if (els.todayOccupancyRate) {
-      els.todayOccupancyRate.addEventListener("input", handleTodayOverviewInput);
+      els.todayOccupancyRate.addEventListener("change", handleTodayOccupancyCommit);
+      els.todayOccupancyRate.addEventListener("blur", handleTodayOccupancyCommit);
     }
     els.tableBody.addEventListener("click", handleTableAction);
     if (els.todayTaskList) {
@@ -643,6 +644,10 @@
   function handleTodayOverviewInput() {
     state.todayOverview.checkin = normalizeTodayOverviewValue(els.todayExpectedCheckin ? els.todayExpectedCheckin.value : "");
     state.todayOverview.checkout = normalizeTodayOverviewValue(els.todayExpectedCheckout ? els.todayExpectedCheckout.value : "");
+    saveTodayOverview();
+  }
+
+  function handleTodayOccupancyCommit() {
     state.todayOverview.occupancy = normalizeOccupancyRateValue(els.todayOccupancyRate ? els.todayOccupancyRate.value : "");
     if (els.todayOccupancyRate) {
       els.todayOccupancyRate.value = state.todayOverview.occupancy;
@@ -2557,7 +2562,9 @@
   }
 
   function normalizeOccupancyRateValue(raw) {
-    const value = String(raw || "").trim();
+    const value = String(raw || "")
+      .replace(/[%％]/g, "")
+      .trim();
     if (!value) {
       return "";
     }
