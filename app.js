@@ -398,7 +398,7 @@
           const existingParsed = JSON.parse(existingRaw);
           const imported = parseBackupPayload(extractCloudPayload(existingParsed));
           if (imported && imported.serverId === currentServerId) {
-            merged = mergeBackupState(merged, imported);
+            merged = mergeBackupState(merged, imported, { preferBaseOverview: true });
           }
         }
       } else if (existingResponse.status !== 404) {
@@ -2624,16 +2624,30 @@
     return Array.from(merged.values()).sort(sortByDueTime);
   }
 
-  function mergeTodayOverview(baseOverview, incomingOverview) {
+  function mergeTodayOverview(baseOverview, incomingOverview, options) {
     const base = baseOverview && typeof baseOverview === "object" ? baseOverview : {};
     const incoming = incomingOverview && typeof incomingOverview === "object" ? incomingOverview : {};
+    const preferBase = Boolean(options && options.preferBaseOverview);
     const hasIncomingCheckin = Object.prototype.hasOwnProperty.call(incoming, "checkin");
     const hasIncomingCheckout = Object.prototype.hasOwnProperty.call(incoming, "checkout");
     const hasIncomingOccupancy = Object.prototype.hasOwnProperty.call(incoming, "occupancy");
+    const incomingCheckin = normalizeTodayOverviewValue(hasIncomingCheckin ? incoming.checkin : "");
+    const incomingCheckout = normalizeTodayOverviewValue(hasIncomingCheckout ? incoming.checkout : "");
+    const incomingOccupancy = normalizeOccupancyRateValue(hasIncomingOccupancy ? incoming.occupancy : "");
+    const baseCheckin = normalizeTodayOverviewValue(base.checkin);
+    const baseCheckout = normalizeTodayOverviewValue(base.checkout);
+    const baseOccupancy = normalizeOccupancyRateValue(base.occupancy);
+    if (preferBase) {
+      return {
+        checkin: baseCheckin || incomingCheckin,
+        checkout: baseCheckout || incomingCheckout,
+        occupancy: baseOccupancy || incomingOccupancy,
+      };
+    }
     return {
-      checkin: normalizeTodayOverviewValue(hasIncomingCheckin ? incoming.checkin : base.checkin),
-      checkout: normalizeTodayOverviewValue(hasIncomingCheckout ? incoming.checkout : base.checkout),
-      occupancy: normalizeOccupancyRateValue(hasIncomingOccupancy ? incoming.occupancy : base.occupancy),
+      checkin: hasIncomingCheckin ? incomingCheckin : baseCheckin,
+      checkout: hasIncomingCheckout ? incomingCheckout : baseCheckout,
+      occupancy: hasIncomingOccupancy ? incomingOccupancy : baseOccupancy,
     };
   }
 
@@ -2703,14 +2717,14 @@
     };
   }
 
-  function mergeBackupState(baseState, incomingState) {
+  function mergeBackupState(baseState, incomingState, options) {
     const base = baseState && typeof baseState === "object" ? baseState : {};
     const incoming = incomingState && typeof incomingState === "object" ? incomingState : {};
     const mergedDeletedTaskIds = mergeDeletedTaskIds(base.deletedTaskIds, incoming.deletedTaskIds);
     const filtered = filterTasksByDeletedMap(mergeTasksById(base.tasks, incoming.tasks), mergedDeletedTaskIds);
     return {
       tasks: filtered.tasks,
-      todayOverview: mergeTodayOverview(base.todayOverview, incoming.todayOverview),
+      todayOverview: mergeTodayOverview(base.todayOverview, incoming.todayOverview, options),
       deletedTaskIds: filtered.deletedTaskIds,
     };
   }
