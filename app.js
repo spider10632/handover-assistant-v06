@@ -2442,8 +2442,7 @@
     let list = state.tasks.slice().sort(sortForTaskTable);
     if (dateValue) {
       list = list.filter(function (task) {
-        const startAt = getTaskStartAt(task);
-        return startAt && toDateKey(new Date(startAt)) === dateValue;
+        return isTaskInDateRange(task, dateValue);
       });
     }
     if (statusValue !== "all") {
@@ -2748,6 +2747,27 @@
       return null;
     }
     return task.endAt || null;
+  }
+
+  function isTaskInDateRange(task, dateKey) {
+    const key = String(dateKey || "").trim();
+    if (!key) {
+      return true;
+    }
+    const startAt = getTaskStartAt(task);
+    const endAt = getTaskEndAt(task);
+    const startKey = startAt ? toDateKey(new Date(startAt)) : "";
+    const endKey = endAt ? toDateKey(new Date(endAt)) : "";
+    if (!startKey && !endKey) {
+      return false;
+    }
+    if (startKey && endKey) {
+      const rangeStart = startKey <= endKey ? startKey : endKey;
+      const rangeEnd = startKey <= endKey ? endKey : startKey;
+      return key >= rangeStart && key <= rangeEnd;
+    }
+    const singleDay = startKey || endKey;
+    return key === singleDay;
   }
 
   function isTaskNotPastByDateKey(task, baseDateKey) {
