@@ -1271,6 +1271,25 @@ body.theme-mono .upcoming-empty {
 
   .today-kpi-row {
     width: 100%;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    white-space: normal;
+    row-gap: 8px;
+  }
+
+  .today-kpi-chip,
+  .today-kpi-field {
+    min-width: 0;
+  }
+
+  .today-kpi-field input {
+    width: 56px;
+    min-width: 56px;
+  }
+
+  #today-occupancy-rate {
+    width: 72px;
+    min-width: 72px;
   }
 
   .today-pinned-zone {
@@ -1280,6 +1299,25 @@ body.theme-mono .upcoming-empty {
   .today-pinned-list {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .today-item,
+  .today-pinned-list > li {
+    min-width: 0;
+  }
+
+  .today-time {
+    margin-left: 0;
+    width: 100%;
+    text-align: right;
+  }
+
+  .today-meta-line,
+  .upcoming-meta-line {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
   }
 
   .query-bar .btn,
