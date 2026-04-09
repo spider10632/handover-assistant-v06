@@ -77,6 +77,16 @@ body::before {
   );
 }
 
+body.theme-mono::before {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(132, 132, 132, 0.12) 0,
+    rgba(132, 132, 132, 0.12) 1px,
+    transparent 1px,
+    transparent 26px
+  );
+}
+
 .bg-shape {
   position: fixed;
   z-index: -1;
@@ -992,6 +1002,88 @@ td {
   padding: 10px;
   color: #e8dcc3;
   background: rgba(18, 25, 22, 0.18);
+}
+
+body.theme-mono .shape-a,
+body.theme-mono .shape-b {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+body.theme-mono .panel {
+  background: linear-gradient(145deg, rgba(252, 252, 252, 0.98), rgba(244, 244, 244, 0.96));
+  border-color: rgba(92, 92, 92, 0.32);
+}
+
+body.theme-mono .panel::before {
+  background: linear-gradient(90deg, #6e6e6e, #b6b6b6, rgba(182, 182, 182, 0));
+}
+
+body.theme-mono .today-pinned-zone,
+body.theme-mono .today-item,
+body.theme-mono .upcoming-item {
+  border-color: rgba(102, 102, 102, 0.34);
+}
+
+body.theme-mono .today-item {
+  border-left-color: #666;
+}
+
+body.theme-mono .today-item.overdue {
+  border-left-color: #4e4e4e;
+}
+
+body.theme-mono .today-item.done {
+  border-left-color: #7a7a7a;
+}
+
+body.theme-mono .today-pill,
+body.theme-mono .today-category-pill,
+body.theme-mono .upcoming-tag {
+  color: #222;
+  background: linear-gradient(120deg, #dddddd, #c4c4c4);
+  border-color: rgba(88, 88, 88, 0.26);
+}
+
+body.theme-mono .btn-primary {
+  color: #171717;
+  background: linear-gradient(120deg, #d0d0d0, #b4b4b4);
+  border-color: rgba(84, 84, 84, 0.34);
+}
+
+body.theme-mono .btn-secondary,
+body.theme-mono .btn-ghost {
+  color: #2b2b2b;
+  background: linear-gradient(120deg, #ebebeb, #d8d8d8);
+  border-color: rgba(95, 95, 95, 0.28);
+}
+
+body.theme-mono .status-pending,
+body.theme-mono .status-done {
+  color: #202020;
+  background: linear-gradient(120deg, #dfdfdf, #cbcbcb);
+}
+
+body.theme-mono .action-done,
+body.theme-mono .action-edit,
+body.theme-mono .action-copy,
+body.theme-mono .action-pin,
+body.theme-mono .action-delete,
+body.theme-mono .action-cancel {
+  color: #222;
+  background: linear-gradient(120deg, #e5e5e5, #cfcfcf);
+  border-color: rgba(85, 85, 85, 0.24);
+}
+
+body.theme-mono .upcoming-board {
+  background: linear-gradient(144deg, rgba(30, 30, 30, 0.97), rgba(48, 48, 48, 0.95));
+  border-color: rgba(176, 176, 176, 0.42);
+}
+
+body.theme-mono .upcoming-board h3,
+body.theme-mono .upcoming-summary,
+body.theme-mono .upcoming-empty {
+  color: #e5e5e5;
 }
 
 .app-version {

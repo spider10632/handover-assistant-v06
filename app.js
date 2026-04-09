@@ -64,6 +64,64 @@
     公告: "334155",
     遺留物: "6B4F2A",
   });
+  const TEST_EXPORT_CATEGORY_COLORS = Object.freeze({
+    廣場: "222222",
+    包裹代收: "2A2A2A",
+    車輛安排: "323232",
+    大廳: "3A3A3A",
+    會議室: "424242",
+    團桌: "4A4A4A",
+    客房: "525252",
+    預訂: "5A5A5A",
+    餐飲部: "626262",
+    待回覆信件: "6A6A6A",
+    郵寄: "727272",
+    行政: "7A7A7A",
+    公告: "828282",
+    遺留物: "8A8A8A",
+  });
+  const USER_PROFILE_MAP = Object.freeze({
+    caesarmetro: Object.freeze({
+      name: "caesarmetro",
+      themeClass: "",
+      themeVars: Object.freeze({}),
+      categories: CATEGORIES.slice(),
+      subcategoryMap: SUBCATEGORY_MAP,
+      exportCategoryColors: EXPORT_CATEGORY_COLORS,
+    }),
+    test: Object.freeze({
+      name: "test",
+      themeClass: "theme-mono",
+      themeVars: Object.freeze({
+        "--bg-ivory": "#f4f4f4",
+        "--bg-sand": "#e4e4e4",
+        "--bg-leaf": "#2d2d2d",
+        "--bg-leaf-deep": "#171717",
+        "--panel-bg": "rgba(250, 250, 250, 0.96)",
+        "--panel-border": "rgba(96, 96, 96, 0.34)",
+        "--panel-line": "rgba(120, 120, 120, 0.86)",
+        "--text-main": "#202020",
+        "--text-muted": "#5a5a5a",
+        "--text-soft": "#6e6e6e",
+        "--gold": "#7a7a7a",
+        "--gold-soft": "#b7b7b7",
+        "--green-soft": "#dcdcdc",
+        "--danger-soft": "#ebebeb",
+        "--content-card-bg": "#f7f7f7",
+        "--content-card-bg-soft": "#ececec",
+        "--status-pending-bg": "linear-gradient(120deg, #e1e1e1, #cfcfcf)",
+        "--status-pending-text": "#202020",
+        "--status-done-bg": "linear-gradient(120deg, #dddddd, #c8c8c8)",
+        "--status-done-text": "#202020",
+        "--status-overdue-bg": "linear-gradient(120deg, #e8e8e8, #d4d4d4)",
+        "--status-overdue-text": "#202020",
+        "--table-header-bg": "rgba(150, 150, 150, 0.2)",
+      }),
+      categories: CATEGORIES.slice(),
+      subcategoryMap: SUBCATEGORY_MAP,
+      exportCategoryColors: TEST_EXPORT_CATEGORY_COLORS,
+    }),
+  });
 
   const state = {
     tasks: [],
@@ -86,6 +144,8 @@
     countdownTimer: null,
     currentServerId: null,
     currentServerConfig: null,
+    currentProfile: null,
+    appliedThemeVarKeys: [],
     cloudInitDone: false,
     cloudPushTimer: null,
     cloudPushInFlight: false,
@@ -111,6 +171,8 @@
       return;
     }
     ensureServerContext();
+    state.currentProfile = resolveProfileForServer(state.currentServerId || DEFAULT_SERVER_ID);
+    applyProfileTheme(state.currentProfile);
     state.initialized = true;
     state.tasks = loadTasks();
     state.deletedTaskIds = loadDeletedTaskIds();
@@ -125,7 +187,7 @@
     state.currentDayKey = getTodayDateKey();
     bindEvents();
     syncCollapsiblePanels();
-    setupQueryCategoryOptions();
+    setupCategorySelectOptions();
     if (els.queryCategory) {
       els.queryCategory.value = state.queryCategory;
     }
@@ -166,6 +228,140 @@
 
   function normalizeServerInput(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function cloneCategoryList(source) {
+    const defaults = CATEGORIES.slice();
+    if (!Array.isArray(source) || source.length === 0) {
+      return defaults;
+    }
+    const seen = new Set();
+    const list = [];
+    source.forEach(function (item) {
+      const value = String(item || "").trim();
+      if (!value || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      list.push(value);
+    });
+    return list.length > 0 ? list : defaults;
+  }
+
+  function cloneSubcategoryMap(source, categories) {
+    const base = source && typeof source === "object" ? source : {};
+    const map = {};
+    (Array.isArray(categories) ? categories : []).forEach(function (category) {
+      const raw = Array.isArray(base[category]) ? base[category] : Array.isArray(SUBCATEGORY_MAP[category]) ? SUBCATEGORY_MAP[category] : [];
+      const list = [];
+      raw.forEach(function (item) {
+        const value = String(item || "").trim();
+        if (!value || list.indexOf(value) !== -1) {
+          return;
+        }
+        list.push(value);
+      });
+      map[category] = list;
+    });
+    return map;
+  }
+
+  function cloneExportColorMap(source) {
+    const map = {};
+    Object.keys(EXPORT_CATEGORY_COLORS).forEach(function (key) {
+      const value = String(EXPORT_CATEGORY_COLORS[key] || "").trim();
+      map[key] = value || EXPORT_DEFAULT_COLOR;
+    });
+    if (source && typeof source === "object") {
+      Object.keys(source).forEach(function (key) {
+        const value = String(source[key] || "").trim();
+        if (!value) {
+          return;
+        }
+        map[key] = value;
+      });
+    }
+    return map;
+  }
+
+  function normalizeThemeClass(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return "";
+    }
+    return /^theme-[a-z0-9_-]+$/i.test(text) ? text : "";
+  }
+
+  function sanitizeThemeVars(source) {
+    if (!source || typeof source !== "object") {
+      return {};
+    }
+    const vars = {};
+    Object.keys(source).forEach(function (key) {
+      const k = String(key || "").trim();
+      const value = String(source[key] || "").trim();
+      if (!/^--[a-z0-9_-]+$/i.test(k) || !value) {
+        return;
+      }
+      vars[k] = value;
+    });
+    return vars;
+  }
+
+  function resolveProfileForServer(serverId) {
+    const key = normalizeServerInput(serverId || DEFAULT_SERVER_ID);
+    const raw = USER_PROFILE_MAP[key] || USER_PROFILE_MAP[DEFAULT_SERVER_ID] || {};
+    const categories = cloneCategoryList(raw.categories);
+    return {
+      name: String(raw.name || key || DEFAULT_SERVER_ID),
+      themeClass: normalizeThemeClass(raw.themeClass),
+      themeVars: sanitizeThemeVars(raw.themeVars),
+      categories: categories,
+      subcategoryMap: cloneSubcategoryMap(raw.subcategoryMap, categories),
+      exportCategoryColors: cloneExportColorMap(raw.exportCategoryColors),
+    };
+  }
+
+  function getActiveProfile() {
+    if (!state.currentProfile || typeof state.currentProfile !== "object") {
+      state.currentProfile = resolveProfileForServer(state.currentServerId || DEFAULT_SERVER_ID);
+    }
+    return state.currentProfile;
+  }
+
+  function getActiveCategories() {
+    return getActiveProfile().categories.slice();
+  }
+
+  function getActiveSubcategoryMap() {
+    const map = getActiveProfile().subcategoryMap;
+    return map && typeof map === "object" ? map : {};
+  }
+
+  function getActiveExportColorMap() {
+    const map = getActiveProfile().exportCategoryColors;
+    return map && typeof map === "object" ? map : {};
+  }
+
+  function applyProfileTheme(profile) {
+    const root = document.documentElement;
+    const body = document.body;
+    const safeProfile = profile && typeof profile === "object" ? profile : {};
+    const prevKeys = Array.isArray(state.appliedThemeVarKeys) ? state.appliedThemeVarKeys : [];
+    prevKeys.forEach(function (key) {
+      root.style.removeProperty(key);
+    });
+    const vars = safeProfile.themeVars && typeof safeProfile.themeVars === "object" ? safeProfile.themeVars : {};
+    const nextKeys = [];
+    Object.keys(vars).forEach(function (key) {
+      root.style.setProperty(key, vars[key]);
+      nextKeys.push(key);
+    });
+    state.appliedThemeVarKeys = nextKeys;
+    body.classList.remove("theme-mono");
+    if (safeProfile.themeClass) {
+      body.classList.add(safeProfile.themeClass);
+    }
   }
 
   function resolveServerByInput(value) {
@@ -542,6 +738,7 @@
     }
     state.currentServerId = server.serverId;
     state.currentServerConfig = server;
+    state.currentProfile = resolveProfileForServer(server.serverId);
     unlockAccessGate();
     init();
     showToast("已進入 " + server.displayName + " 伺服器。");
@@ -987,14 +1184,58 @@
     updateFormLockState();
   }
 
+  function setupCategorySelectOptions() {
+    setupTaskCategoryOptions();
+    setupTodayCategoryOptions();
+    setupQueryCategoryOptions();
+  }
+
+  function setupTaskCategoryOptions() {
+    if (!els.taskCategory) {
+      return;
+    }
+    const categories = getActiveCategories();
+    const current = String(els.taskCategory.value || "").trim();
+    els.taskCategory.innerHTML =
+      '<option value="" disabled selected>請選擇主分類</option>' +
+      categories
+        .map(function (category) {
+          return '<option value="' + category + '">' + category + "</option>";
+        })
+        .join("");
+    if (isValidCategory(current)) {
+      els.taskCategory.value = current;
+    } else {
+      els.taskCategory.value = "";
+    }
+  }
+
+  function setupTodayCategoryOptions() {
+    if (!els.todayCategoryFilter) {
+      return;
+    }
+    const categories = getActiveCategories();
+    const current = normalizeQueryCategory(state.todayCategory || els.todayCategoryFilter.value || "all");
+    els.todayCategoryFilter.innerHTML = ['<option value="all">全部主分類</option>']
+      .concat(
+        categories.map(function (category) {
+          return '<option value="' + category + '">' + category + "</option>";
+        }),
+      )
+      .join("");
+    els.todayCategoryFilter.value = current === "all" ? "all" : isValidCategory(current) ? current : "all";
+    state.todayCategory = els.todayCategoryFilter.value;
+  }
+
   function setupQueryCategoryOptions() {
     if (!els.queryCategory) {
       return;
     }
+    const categories = getActiveCategories();
     const current = normalizeQueryCategory(els.queryCategory.value || state.queryCategory);
     const optionsHtml = ['<option value="all">全部主分類</option>']
       .concat(
-        CATEGORIES.map(function (category) {
+        categories.map(function (category) {
           return '<option value="' + category + '">' + category + "</option>";
         }),
       )
@@ -2500,13 +2741,13 @@
     const endOfTargetDay = new Date(targetDate + "T23:59:59").getTime();
 
     const attention = statusPool.filter(function (task) {
-      return task.category === CATEGORIES[9];
+      return task.category === "待回覆信件";
     });
 
     const daily = (Array.isArray(currentList) ? currentList.slice() : []).sort(sortForTaskTable);
 
     const banquets = statusPool.filter(function (task) {
-      return task.category === CATEGORIES[4] || task.category === CATEGORIES[5] || task.category === CATEGORIES[7];
+      return task.category === "會議室" || task.category === "團桌" || task.category === "預訂";
     });
 
     const future = statusPool.filter(function (task) {
@@ -2518,7 +2759,7 @@
     });
 
     const transfer = statusPool.filter(function (task) {
-      return task.category === CATEGORIES[1];
+      return task.category === "包裹代收";
     });
 
     const used = new Set();
@@ -2558,7 +2799,7 @@
     if (!key) {
       return EXPORT_DEFAULT_COLOR;
     }
-    return EXPORT_CATEGORY_COLORS[key] || EXPORT_DEFAULT_COLOR;
+    return getActiveExportColorMap()[key] || EXPORT_DEFAULT_COLOR;
   }
 
   function formatExportTaskDate(task) {
@@ -3284,7 +3525,7 @@
   }
 
   function getCategorySortIndex(category) {
-    const idx = CATEGORIES.indexOf(String(category || "").trim());
+    const idx = getActiveCategories().indexOf(String(category || "").trim());
     return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
   }
 
@@ -3303,19 +3544,20 @@
   }
 
   function normalizeCategory(raw) {
+    const categories = getActiveCategories();
     const value = String(raw || "").trim();
-    if (CATEGORIES.indexOf(value) === -1) {
-      return CATEGORIES[0];
+    if (categories.indexOf(value) === -1) {
+      return categories[0];
     }
     return value;
   }
 
   function isValidCategory(value) {
-    return CATEGORIES.indexOf(value) !== -1;
+    return getActiveCategories().indexOf(value) !== -1;
   }
 
   function getSubcategoryOptions(category) {
-    const list = SUBCATEGORY_MAP[category];
+    const list = getActiveSubcategoryMap()[category];
     return Array.isArray(list) ? list.slice() : [];
   }
 
