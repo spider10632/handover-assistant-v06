@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>工作交接助手</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="工作交接助手" />
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="assets/icons/icon-512.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png" />
+    <link rel="shortcut icon" href="assets/icons/icon-192.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -14,7 +21,7 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
     />
-    <link rel="stylesheet" href="styles.css?v=20260410-04" />
+    <link rel="stylesheet" href="styles.css?v=20260410-05" />
   </head>
   <body>
     <div class="bg-shape shape-a"></div>
@@ -321,7 +328,7 @@
 
     <div id="mobile-upcoming-overlay" class="mobile-upcoming-overlay" aria-hidden="true"></div>
     <button id="mobile-add-btn" class="mobile-add-btn" type="button" aria-label="前往新增交接待辦">
-      <i class="ti ti-plus" aria-hidden="true"></i>
+      <span aria-hidden="true">+</span>
     </button>
     <button id="mobile-upcoming-toggle" class="mobile-upcoming-toggle" type="button" aria-expanded="false" aria-controls="upcoming-board">
       <i class="ti ti-bell-ringing" aria-hidden="true"></i>

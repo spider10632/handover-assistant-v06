@@ -1463,8 +1463,11 @@ body.theme-mono .upcoming-empty {
     font-weight: 700;
   }
 
-  .mobile-add-btn i {
-    font-size: 1.12rem;
+  .mobile-add-btn span {
+    font-size: 1.55rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-top: -1px;
   }
 
   .mobile-upcoming-toggle {
