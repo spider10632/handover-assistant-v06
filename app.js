@@ -722,11 +722,11 @@
     saveTodayOverview();
     const cloudUrl = getCurrentCloudUrl();
     if (!cloudUrl || !state.cloudInitDone) {
-      showToast("已強制儲存（本機）。");
+      showToast("已儲存（本機）。");
       return;
     }
     const ok = await pushCloudBackupNow();
-    showToast(ok ? "已強制儲存到雲端。" : "已強制儲存，本機成功，雲端稍後同步。");
+    showToast(ok ? "已儲存到雲端。" : "已儲存，本機成功，雲端稍後同步。");
   }
 
   function renderTodayOverviewBar() {
