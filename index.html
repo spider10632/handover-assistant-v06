@@ -14,7 +14,7 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
     />
-    <link rel="stylesheet" href="styles.css?v=20260410-03" />
+    <link rel="stylesheet" href="styles.css?v=20260410-04" />
   </head>
   <body>
     <div class="bg-shape shape-a"></div>
@@ -26,7 +26,7 @@
         <h1>工作交接助手</h1>
           <p class="password-subtitle">請輸入使用者後進入系統（不同使用者為獨立資料庫）</p>
           <label for="password-input">使用者（英數、-、_）</label>
-          <input id="password-input" type="text" inputmode="text" placeholder="例：caesarmetro / hotel_a" required />
+          <input id="password-input" type="text" inputmode="text" required />
         <p id="password-error" class="password-error hidden"></p>
         <button id="password-submit" class="btn btn-primary" type="submit">進入系統</button>
       </form>
@@ -320,6 +320,9 @@
     </aside>
 
     <div id="mobile-upcoming-overlay" class="mobile-upcoming-overlay" aria-hidden="true"></div>
+    <button id="mobile-add-btn" class="mobile-add-btn" type="button" aria-label="前往新增交接待辦">
+      <i class="ti ti-plus" aria-hidden="true"></i>
+    </button>
     <button id="mobile-upcoming-toggle" class="mobile-upcoming-toggle" type="button" aria-expanded="false" aria-controls="upcoming-board">
       <i class="ti ti-bell-ringing" aria-hidden="true"></i>
       <span class="mobile-upcoming-toggle-text">下一件待辦</span>
@@ -338,6 +341,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260410-04" defer></script>
+    <script src="app.js?v=20260410-05" defer></script>
   </body>
 </html>

@@ -64,6 +64,7 @@ body.gate-locked {
 
 body.gate-locked .upcoming-board,
 body.gate-locked .mobile-upcoming-overlay,
+body.gate-locked .mobile-add-btn,
 body.gate-locked .mobile-upcoming-toggle,
 body.gate-locked .mobile-top-btn {
   display: none !important;
@@ -1024,6 +1025,7 @@ td {
 }
 
 .mobile-upcoming-overlay,
+.mobile-add-btn,
 .mobile-upcoming-toggle,
 .mobile-top-btn {
   display: none;
@@ -1442,6 +1444,29 @@ body.theme-mono .upcoming-empty {
     border-radius: 999px;
   }
 
+  .mobile-add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 12px;
+    top: calc(12px + env(safe-area-inset-top));
+    width: 42px;
+    height: 42px;
+    z-index: 88;
+    border-radius: 999px;
+    border: 1px solid rgba(172, 137, 83, 0.52);
+    background: linear-gradient(135deg, rgba(252, 246, 232, 0.98), rgba(236, 219, 181, 0.95));
+    color: #4b361d;
+    box-shadow: 0 9px 16px rgba(20, 14, 9, 0.24);
+    font-size: 1.08rem;
+    font-weight: 700;
+  }
+
+  .mobile-add-btn i {
+    font-size: 1.12rem;
+  }
+
   .mobile-upcoming-toggle {
     display: inline-flex;
     align-items: center;
@@ -1492,6 +1517,12 @@ body.theme-mono .upcoming-empty {
     opacity: 0;
     pointer-events: none;
     transform: translateY(8px);
+  }
+
+  body.mobile-upcoming-open .mobile-add-btn {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .mobile-top-btn {
@@ -1554,6 +1585,7 @@ body.theme-mono .upcoming-empty {
   }
 
   .mobile-top-btn:active,
+  .mobile-add-btn:active,
   .mobile-upcoming-toggle:active {
     transform: translateY(1px);
   }
@@ -1566,6 +1598,12 @@ body.theme-mono .upcoming-empty {
     border-color: rgba(178, 178, 178, 0.52);
     background: linear-gradient(140deg, rgba(31, 31, 31, 0.97), rgba(52, 52, 52, 0.95));
     color: #eeeeee;
+  }
+
+  body.theme-mono .mobile-add-btn {
+    border-color: rgba(138, 138, 138, 0.52);
+    background: linear-gradient(130deg, rgba(236, 236, 236, 0.98), rgba(212, 212, 212, 0.95));
+    color: #2a2a2a;
   }
 
   body.theme-mono .mobile-upcoming-badge {

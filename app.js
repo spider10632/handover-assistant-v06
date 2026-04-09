@@ -817,6 +817,7 @@
     els.toast = document.getElementById("toast");
     els.notificationToggle = document.getElementById("notification-toggle");
     els.requestNotificationBtn = document.getElementById("request-notification-btn");
+    els.mobileAddBtn = document.getElementById("mobile-add-btn");
     els.mobileUpcomingToggle = document.getElementById("mobile-upcoming-toggle");
     els.mobileUpcomingBadge = document.getElementById("mobile-upcoming-badge");
     els.mobileUpcomingClose = document.getElementById("mobile-upcoming-close");
@@ -906,6 +907,9 @@
     }
     if (els.mobileTopBtn) {
       els.mobileTopBtn.addEventListener("click", handleMobileTopClick);
+    }
+    if (els.mobileAddBtn) {
+      els.mobileAddBtn.addEventListener("click", handleMobileAddClick);
     }
     window.addEventListener("resize", syncMobileReminderUi);
     window.addEventListener("scroll", updateMobileFloatingVisibility, { passive: true });
@@ -1171,6 +1175,11 @@
       window.scrollTo(0, 0);
     }
     updateMobileFloatingVisibility();
+  }
+
+  function handleMobileAddClick() {
+    setMobileUpcomingOpen(false);
+    scrollToTaskFormPanel();
   }
 
   function updateMobileFloatingVisibility() {
