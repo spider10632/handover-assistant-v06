@@ -1811,15 +1811,26 @@
     const rows = buildExcelRows(tasks);
     const headers = ["事項名稱", "主分類", "填寫人", "完成人", "交接說明"];
     if (window.XLSX && window.XLSX.utils) {
-      const aoa = [headers].concat(
-        rows.map(function (row) {
-          return headers.map(function (key) {
-            return row[key];
-          });
-        }),
-      );
+      const built = buildExcelAoaAndMerges(tasks, exportDate, includeDatePrefix, headers);
+      const aoa = built.aoa;
+      const merges = built.merges;
       const worksheet = window.XLSX.utils.aoa_to_sheet(aoa);
       worksheet["!cols"] = [{ wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 56 }];
+      worksheet["!merges"] = merges;
+      worksheet["!margins"] = {
+        left: 0.25,
+        right: 0.25,
+        top: 0.3,
+        bottom: 0.3,
+        header: 0.15,
+        footer: 0.15,
+      };
+      worksheet["!pageSetup"] = {
+        paperSize: 9,
+        orientation: "portrait",
+        fitToWidth: 1,
+        fitToHeight: 1,
+      };
       const workbook = window.XLSX.utils.book_new();
       const sheetName = sanitizeExcelSheetName(includeDatePrefix ? "未來待辦事項" : "每日報告");
       window.XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
@@ -1842,6 +1853,76 @@
         交接說明: description || "-",
       };
     });
+  }
+
+  function buildExcelAoaAndMerges(tasks, exportDate, includeDatePrefix, headers) {
+    const list = Array.isArray(tasks) ? tasks.slice().sort(sortForExportCategoryThenTime) : [];
+    const cols = Array.isArray(headers) && headers.length > 0 ? headers.length : 5;
+    const aoa = [];
+    const merges = [];
+
+    function pushMergedRow(text) {
+      const rowIndex = aoa.length;
+      const row = [String(text || "")];
+      while (row.length < cols) {
+        row.push("");
+      }
+      aoa.push(row);
+      merges.push({
+        s: { r: rowIndex, c: 0 },
+        e: { r: rowIndex, c: cols - 1 },
+      });
+    }
+
+    function pushHeaderRow() {
+      aoa.push(headers.slice());
+    }
+
+    function pushTaskRows(taskList) {
+      const rows = buildExcelRows(taskList);
+      if (rows.length === 0) {
+        const emptyRow = [];
+        for (let i = 0; i < cols; i += 1) {
+          emptyRow.push("-");
+        }
+        aoa.push(emptyRow);
+        return;
+      }
+      rows.forEach(function (row) {
+        aoa.push(
+          headers.map(function (key) {
+            return row[key];
+          }),
+        );
+      });
+    }
+
+    pushMergedRow(buildArrDepOccLine(exportDate));
+    pushMergedRow(includeDatePrefix ? "Future To-Do / 未來待辦事項" : "Daily Briefing / 每日報告");
+    aoa.push([]);
+
+    if (!includeDatePrefix) {
+      pushHeaderRow();
+      pushTaskRows(list);
+      return { aoa: aoa, merges: merges };
+    }
+
+    const grouped = groupExportTasksByDate(list);
+    if (grouped.length === 0) {
+      pushHeaderRow();
+      pushTaskRows([]);
+      return { aoa: aoa, merges: merges };
+    }
+
+    grouped.forEach(function (group, index) {
+      pushMergedRow("日期：" + group.label);
+      pushHeaderRow();
+      pushTaskRows(group.tasks);
+      if (index < grouped.length - 1) {
+        aoa.push([]);
+      }
+    });
+    return { aoa: aoa, merges: merges };
   }
 
   function sanitizeExcelSheetName(name) {
