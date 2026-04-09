@@ -1235,7 +1235,7 @@ body.theme-mono .upcoming-empty {
 
 @media (max-width: 760px) {
   .app {
-    padding: 14px 10px 110px;
+    padding: 14px 10px calc(190px + env(safe-area-inset-bottom));
     gap: 12px;
   }
 
@@ -1444,10 +1444,10 @@ body.theme-mono .upcoming-empty {
     gap: 6px;
     position: fixed;
     right: 12px;
-    bottom: 14px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
     z-index: 86;
-    min-width: 108px;
-    padding: 10px 12px;
+    min-width: 102px;
+    padding: 9px 11px;
     border-radius: 999px;
     border: 1px solid rgba(172, 137, 83, 0.5);
     background: linear-gradient(140deg, rgba(17, 39, 34, 0.96), rgba(26, 55, 47, 0.95));
@@ -1496,7 +1496,7 @@ body.theme-mono .upcoming-empty {
     gap: 5px;
     position: fixed;
     left: 50%;
-    bottom: 14px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
     z-index: 85;
     padding: 10px 14px;
@@ -1526,6 +1526,7 @@ body.theme-mono .upcoming-empty {
   }
 
   .app-version {
+    bottom: calc(10px + env(safe-area-inset-bottom));
     opacity: 0;
     visibility: hidden;
     pointer-events: none;

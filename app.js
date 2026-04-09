@@ -30,7 +30,7 @@
   const CLOUD_PUSH_DEBOUNCE_MS = 1200;
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
   const BACKUP_TYPE = "handover-backup";
-  const BACKUP_VERSION = "0.9";
+  const BACKUP_VERSION = "0.95";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
