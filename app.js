@@ -12,6 +12,13 @@
       legacyKvdbBucket: "7cWAAYbjUk95gHksRVkTp3",
       legacyKvdbKey: "handover-assistant-v07-caesarmetro",
     },
+    test: {
+      serverId: "test",
+      displayName: "test",
+      cloudApiBase: "",
+      legacyKvdbBucket: "",
+      legacyKvdbKey: "",
+    },
   });
   const ALLOW_DYNAMIC_SERVER_LOGIN = true;
   const DEFAULT_SERVER_ID = "caesarmetro";
