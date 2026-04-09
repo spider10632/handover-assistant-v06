@@ -1273,6 +1273,15 @@ body.theme-mono .upcoming-empty {
     width: 100%;
   }
 
+  .today-pinned-zone {
+    margin-bottom: 14px;
+  }
+
+  .today-pinned-list {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
   .query-bar .btn,
   .query-bar input,
   .query-bar select {
