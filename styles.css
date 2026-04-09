@@ -700,6 +700,14 @@ textarea {
   min-width: 184px;
 }
 
+#query-category {
+  min-width: 158px;
+}
+
+#query-keyword {
+  min-width: 260px;
+}
+
 .query-result {
   margin: 10px 0 0;
   color: #5c6058;

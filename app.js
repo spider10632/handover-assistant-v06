@@ -37,7 +37,7 @@
     行政: ["叫貨領貨", "人事相關", "其他"],
   };
   const EXPORT_FONT_EAST_ASIA = "DFKai-SB";
-  const EXPORT_FONT_LATIN = "Calibri";
+  const EXPORT_FONT_LATIN = "DFKai-SB";
   const EXPORT_DEFAULT_COLOR = "1F2A2A";
   const EXPORT_CATEGORY_COLORS = Object.freeze({
     廣場: "B42318",
@@ -59,12 +59,16 @@
     tasks: [],
     queryDate: "",
     queryStatus: "all",
+    queryCategory: "all",
+    queryKeyword: "",
     taskListFilter: "all",
     todayOverview: {
       checkin: "",
       checkout: "",
       occupancy: "",
+      dateKey: "",
     },
+    currentDayKey: "",
     todayCategory: "all",
     formAllDay: false,
     editingTaskId: null,
@@ -107,8 +111,16 @@
     saveTasks();
     saveDeletedTaskIds();
     state.todayOverview = loadTodayOverview();
+    state.currentDayKey = getTodayDateKey();
     bindEvents();
     syncCollapsiblePanels();
+    setupQueryCategoryOptions();
+    if (els.queryCategory) {
+      els.queryCategory.value = state.queryCategory;
+    }
+    if (els.queryKeyword) {
+      els.queryKeyword.value = state.queryKeyword;
+    }
     if (els.taskListFilter) {
       state.taskListFilter = normalizeTaskListFilter(els.taskListFilter.value);
       els.taskListFilter.value = state.taskListFilter;
@@ -425,6 +437,7 @@
           checkin: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkin),
           checkout: normalizeTodayOverviewValue(merged.todayOverview && merged.todayOverview.checkout),
           occupancy: normalizeOccupancyRateValue(merged.todayOverview && merged.todayOverview.occupancy),
+          dateKey: normalizeDateInputFromAny(merged.todayOverview && merged.todayOverview.dateKey) || getTodayDateKey(),
         },
       };
 
@@ -538,6 +551,8 @@
     els.cancelEditBtn = document.getElementById("cancel-edit-btn");
     els.queryDate = document.getElementById("query-date");
     els.queryStatus = document.getElementById("query-status");
+    els.queryCategory = document.getElementById("query-category");
+    els.queryKeyword = document.getElementById("query-keyword");
     els.searchBtn = document.getElementById("search-btn");
     els.clearSearchBtn = document.getElementById("clear-search-btn");
     els.queryResultText = document.getElementById("query-result-text");
@@ -561,6 +576,7 @@
     els.todayExpectedCheckin = document.getElementById("today-expected-checkin");
     els.todayExpectedCheckout = document.getElementById("today-expected-checkout");
     els.todayOccupancyRate = document.getElementById("today-occupancy-rate");
+    els.todayOverviewSaveBtn = document.getElementById("today-overview-save-btn");
     els.panelToggleButtons = Array.prototype.slice.call(document.querySelectorAll(".panel-toggle-btn"));
   }
 
@@ -576,6 +592,17 @@
     if (els.queryStatus) {
       els.queryStatus.addEventListener("change", applyDateQuery);
     }
+    if (els.queryCategory) {
+      els.queryCategory.addEventListener("change", applyDateQuery);
+    }
+    if (els.queryKeyword) {
+      els.queryKeyword.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          applyDateQuery();
+        }
+      });
+    }
     if (els.taskListFilter) {
       els.taskListFilter.addEventListener("change", handleTaskListFilterChange);
     }
@@ -588,6 +615,9 @@
     if (els.todayOccupancyRate) {
       els.todayOccupancyRate.addEventListener("change", handleTodayOccupancyCommit);
       els.todayOccupancyRate.addEventListener("blur", handleTodayOccupancyCommit);
+    }
+    if (els.todayOverviewSaveBtn) {
+      els.todayOverviewSaveBtn.addEventListener("click", handleTodayOverviewForceSave);
     }
     els.tableBody.addEventListener("click", handleTableAction);
     if (els.todayTaskList) {
@@ -648,20 +678,57 @@
   }
 
   function handleTodayOverviewInput() {
-    state.todayOverview.checkin = normalizeTodayOverviewValue(els.todayExpectedCheckin ? els.todayExpectedCheckin.value : "");
-    state.todayOverview.checkout = normalizeTodayOverviewValue(els.todayExpectedCheckout ? els.todayExpectedCheckout.value : "");
+    state.todayOverview = normalizeTodayOverviewRecord(
+      {
+        checkin: els.todayExpectedCheckin ? els.todayExpectedCheckin.value : "",
+        checkout: els.todayExpectedCheckout ? els.todayExpectedCheckout.value : "",
+        occupancy: state.todayOverview ? state.todayOverview.occupancy : "",
+        dateKey: getTodayDateKey(),
+      },
+      true,
+    );
     saveTodayOverview();
   }
 
   function handleTodayOccupancyCommit() {
-    state.todayOverview.occupancy = normalizeOccupancyRateValue(els.todayOccupancyRate ? els.todayOccupancyRate.value : "");
+    state.todayOverview = normalizeTodayOverviewRecord(
+      {
+        checkin: state.todayOverview ? state.todayOverview.checkin : "",
+        checkout: state.todayOverview ? state.todayOverview.checkout : "",
+        occupancy: els.todayOccupancyRate ? els.todayOccupancyRate.value : "",
+        dateKey: getTodayDateKey(),
+      },
+      true,
+    );
     if (els.todayOccupancyRate) {
       els.todayOccupancyRate.value = state.todayOverview.occupancy;
     }
     saveTodayOverview();
   }
 
+  async function handleTodayOverviewForceSave() {
+    state.todayOverview = normalizeTodayOverviewRecord(
+      {
+        checkin: els.todayExpectedCheckin ? els.todayExpectedCheckin.value : "",
+        checkout: els.todayExpectedCheckout ? els.todayExpectedCheckout.value : "",
+        occupancy: els.todayOccupancyRate ? els.todayOccupancyRate.value : "",
+        dateKey: getTodayDateKey(),
+      },
+      true,
+    );
+    renderTodayOverviewBar();
+    saveTodayOverview();
+    const cloudUrl = getCurrentCloudUrl();
+    if (!cloudUrl || !state.cloudInitDone) {
+      showToast("已強制儲存（本機）。");
+      return;
+    }
+    const ok = await pushCloudBackupNow();
+    showToast(ok ? "已強制儲存到雲端。" : "已強制儲存，本機成功，雲端稍後同步。");
+  }
+
   function renderTodayOverviewBar() {
+    handleDailyRollover();
     if (els.todayAutoDate) {
       els.todayAutoDate.textContent = formatDateOnly(new Date());
     }
@@ -673,6 +740,28 @@
     }
     if (els.todayOccupancyRate) {
       els.todayOccupancyRate.value = state.todayOverview.occupancy || "";
+    }
+  }
+
+  function handleDailyRollover() {
+    const todayKey = getTodayDateKey();
+    if (!state.currentDayKey) {
+      state.currentDayKey = todayKey;
+      state.todayOverview = normalizeTodayOverviewRecord(state.todayOverview, true);
+      return;
+    }
+    if (state.currentDayKey === todayKey) {
+      return;
+    }
+    const hadValue =
+      Boolean(state.todayOverview && state.todayOverview.checkin) ||
+      Boolean(state.todayOverview && state.todayOverview.checkout) ||
+      Boolean(state.todayOverview && state.todayOverview.occupancy);
+    state.currentDayKey = todayKey;
+    state.todayOverview = createEmptyTodayOverview(todayKey);
+    saveTodayOverview();
+    if (hadValue) {
+      showToast("已換日，預進/預退/住房率已清空。");
     }
   }
 
@@ -850,6 +939,23 @@
 
     els.taskSubcategory.value = options.indexOf(current) !== -1 ? current : "";
     updateFormLockState();
+  }
+
+  function setupQueryCategoryOptions() {
+    if (!els.queryCategory) {
+      return;
+    }
+    const current = normalizeQueryCategory(els.queryCategory.value || state.queryCategory);
+    const optionsHtml = ['<option value="all">全部主分類</option>']
+      .concat(
+        CATEGORIES.map(function (category) {
+          return '<option value="' + category + '">' + category + "</option>";
+        }),
+      )
+      .join("");
+    els.queryCategory.innerHTML = optionsHtml;
+    els.queryCategory.value = current;
+    state.queryCategory = current;
   }
 
   function isCategorySelectionReady() {
@@ -1076,8 +1182,16 @@
   function applyDateQuery() {
     state.queryDate = els.queryDate.value;
     state.queryStatus = normalizeQueryStatus(els.queryStatus ? els.queryStatus.value : "all");
+    state.queryCategory = normalizeQueryCategory(els.queryCategory ? els.queryCategory.value : "all");
+    state.queryKeyword = normalizeQueryKeyword(els.queryKeyword ? els.queryKeyword.value : "");
     if (els.queryStatus) {
       els.queryStatus.value = state.queryStatus;
+    }
+    if (els.queryCategory) {
+      els.queryCategory.value = state.queryCategory;
+    }
+    if (els.queryKeyword) {
+      els.queryKeyword.value = state.queryKeyword;
     }
     setPanelCollapsed("task-list-panel", false);
     renderAll();
@@ -1086,9 +1200,17 @@
   function clearDateQuery() {
     state.queryDate = "";
     state.queryStatus = "all";
+    state.queryCategory = "all";
+    state.queryKeyword = "";
     els.queryDate.value = "";
     if (els.queryStatus) {
       els.queryStatus.value = "all";
+    }
+    if (els.queryCategory) {
+      els.queryCategory.value = "all";
+    }
+    if (els.queryKeyword) {
+      els.queryKeyword.value = "";
     }
     renderAll();
   }
@@ -1308,7 +1430,8 @@
 
   function renderQueryText() {
     const list = getFilteredTasks();
-    if (!state.queryDate && state.queryStatus === "all") {
+    const hasKeyword = Boolean(normalizeQueryKeyword(state.queryKeyword));
+    if (!state.queryDate && state.queryStatus === "all" && state.queryCategory === "all" && !hasKeyword) {
       els.queryResultText.textContent = "目前顯示全部待辦，共 " + list.length + " 筆。";
       return;
     }
@@ -1625,7 +1748,7 @@
   }
 
   function getFilteredTasks() {
-    return getTasksByDateAndStatus(state.queryDate, state.queryStatus);
+    return getTasksByDateAndStatus(state.queryDate, state.queryStatus, state.queryCategory, state.queryKeyword);
   }
 
   function getTaskListFilteredTasks() {
@@ -1846,8 +1969,11 @@
     return list.map(function (task) {
       const completedBy = task && task.status === "done" && task.completedBy ? String(task.completedBy).trim() : "-";
       const description = formatExcelDescription(task && task.description ? task.description : "");
+      const title = task && task.title ? String(task.title).trim() : "-";
+      const timeText = formatExportTaskTime(task);
+      const timePrefix = timeText && timeText !== "-" ? timeText + " " : "";
       return {
-        事項名稱: task && task.title ? String(task.title).trim() : "-",
+        事項名稱: timePrefix + title,
         主分類: task && task.category ? String(task.category).trim() : "-",
         填寫人: task && task.owner ? String(task.owner).trim() : "-",
         完成人: completedBy || "-",
@@ -1898,7 +2024,9 @@
       });
     }
 
-    pushMergedRow(buildArrDepOccLine(exportDate));
+    if (!includeDatePrefix) {
+      pushMergedRow(buildArrDepOccLine(exportDate));
+    }
     pushMergedRow(includeDatePrefix ? "Future To-Do / 未來待辦事項" : "Daily Briefing / 每日報告");
     aoa.push([]);
 
@@ -2058,11 +2186,7 @@
     return {
       serverId: rawServerId || DEFAULT_SERVER_ID,
       tasks: filtered.tasks,
-      todayOverview: {
-        checkin: normalizeTodayOverviewValue(rawTodayOverview.checkin),
-        checkout: normalizeTodayOverviewValue(rawTodayOverview.checkout),
-        occupancy: normalizeOccupancyRateValue(rawTodayOverview.occupancy),
-      },
+      todayOverview: normalizeTodayOverviewRecord(rawTodayOverview, true),
       deletedTaskIds: filtered.deletedTaskIds,
     };
   }
@@ -2105,13 +2229,16 @@
         rows: rows,
       });
     }
-    const children = [
-      new Paragraph({
-        alignment: AlignmentType.LEFT,
-        children: [createExportTextRun(TextRun, buildArrDepOccLine(exportDate), { bold: true })],
-      }),
-      new Paragraph({ text: "" }),
-    ];
+    const children = [];
+    if (!showFutureMode) {
+      children.push(
+        new Paragraph({
+          alignment: AlignmentType.LEFT,
+          children: [createExportTextRun(TextRun, buildArrDepOccLine(exportDate), { bold: true })],
+        }),
+      );
+      children.push(new Paragraph({ text: "" }));
+    }
 
     if (showFutureMode) {
       const grouped = groupExportTasksByDate(dailyList);
@@ -2456,18 +2583,14 @@
     if (task.allDay) {
       return "全天";
     }
-    if (startAt && endAt) {
-      const start = new Date(startAt);
-      const end = new Date(endAt);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        return formatDueDisplay(task);
-      }
-      if (toDateKey(start) === toDateKey(end)) {
-        return formatTime(start, false) + " 至 " + formatTime(end, false);
-      }
-      return formatDateTime(start) + " 至 " + formatDateTime(end);
+    const startText = startAt ? formatTime(startAt, false) : "";
+    const endText = endAt ? formatTime(endAt, false) : "";
+    const safeStart = startText && startText !== "--:--" ? startText : "";
+    const safeEnd = endText && endText !== "--:--" ? endText : "";
+    if (safeStart && safeEnd) {
+      return safeStart + " 至 " + safeEnd;
     }
-    return formatTime(startAt || endAt, false);
+    return safeStart || safeEnd || "-";
   }
 
   function formatExportTaskLine(task, options) {
@@ -2478,14 +2601,15 @@
     const descText = task.description ? String(task.description).replace(/\s*\n+\s*/g, " / ").trim() : "-";
     return (
       "- " +
+      "時間: " +
+      formatExportTaskTime(task) +
+      " | " +
       (includeDatePrefix ? "日期: " + formatExportTaskDate(task) + " | " : "") +
       (task.title || "-") +
       " | " +
       categoryText +
       " | " +
-      "時間: " +
-      formatExportTaskTime(task) +
-      " | 填寫人: " +
+      "填寫人: " +
       ownerText +
       " | Done: " +
       doneBy +
@@ -2596,6 +2720,9 @@
       groupedSectionHtml = buildSectionTableHtml(dailyList);
     }
 
+    const arrDepOccHtml = includeDatePrefix
+      ? ""
+      : "<p class='arrdepocc'>" + escapeHtml(buildArrDepOccLine(exportDate)) + "</p>";
     const html =
       "<html><head><meta charset='utf-8'><style>" +
       "@page{margin:0.5in;}" +
@@ -2608,9 +2735,7 @@
       ".left{width:160px;text-align:center;font-weight:700;}" +
       ".arrdepocc{margin-top:12px;font-weight:700;}" +
       "</style></head><body>" +
-      "<p class='arrdepocc'>" +
-      escapeHtml(buildArrDepOccLine(exportDate)) +
-      "</p>" +
+      arrDepOccHtml +
       groupedSectionHtml +
       "</body></html>";
 
@@ -2650,6 +2775,18 @@
     return "all";
   }
 
+  function normalizeQueryCategory(raw) {
+    const value = String(raw || "").trim();
+    if (!value || value === "all") {
+      return "all";
+    }
+    return isValidCategory(value) ? value : "all";
+  }
+
+  function normalizeQueryKeyword(raw) {
+    return String(raw || "").trim().replace(/\s+/g, " ");
+  }
+
   function normalizeTaskListFilter(raw) {
     const value = String(raw || "").trim();
     if (value === "pending" || value === "done" || value === "pinned") {
@@ -2668,17 +2805,27 @@
     return "全部狀態";
   }
 
+  function getQueryCategoryLabel(category) {
+    const normalized = normalizeQueryCategory(category);
+    return normalized === "all" ? "全部主分類" : normalized;
+  }
+
   function buildQueryConditionText() {
-    return buildConditionText(state.queryDate, state.queryStatus);
+    return buildConditionText(state.queryDate, state.queryStatus, state.queryCategory, state.queryKeyword);
   }
 
-  function buildConditionText(dateValue, statusValue) {
+  function buildConditionText(dateValue, statusValue, categoryValue, keywordValue) {
     const dateText = dateValue ? dateValue.replace(/-/g, "/") : "全部日期";
-    return dateText + " / " + getQueryStatusLabel(statusValue);
+    const categoryText = getQueryCategoryLabel(categoryValue);
+    const keywordText = normalizeQueryKeyword(keywordValue);
+    const keywordLabel = keywordText ? ("關鍵字：" + keywordText) : "關鍵字：全部";
+    return dateText + " / " + getQueryStatusLabel(statusValue) + " / " + categoryText + " / " + keywordLabel;
   }
 
-  function getTasksByDateAndStatus(dateValue, statusValue) {
+  function getTasksByDateAndStatus(dateValue, statusValue, categoryValue, keywordValue) {
     let list = state.tasks.slice().sort(sortForTaskTable);
+    const normalizedCategory = normalizeQueryCategory(categoryValue);
+    const normalizedKeyword = normalizeQueryKeyword(keywordValue).toLowerCase();
     if (dateValue) {
       list = list.filter(function (task) {
         return isTaskInDateRange(task, dateValue);
@@ -2687,6 +2834,29 @@
     if (statusValue !== "all") {
       list = list.filter(function (task) {
         return task.status === statusValue;
+      });
+    }
+    if (normalizedCategory !== "all") {
+      list = list.filter(function (task) {
+        return task.category === normalizedCategory;
+      });
+    }
+    if (normalizedKeyword) {
+      list = list.filter(function (task) {
+        const haystack = [
+          task.category,
+          task.subcategory,
+          task.title,
+          task.owner,
+          task.completedBy,
+          task.description,
+        ]
+          .map(function (value) {
+            return String(value || "");
+          })
+          .join(" ")
+          .toLowerCase();
+        return haystack.indexOf(normalizedKeyword) !== -1;
       });
     }
     return list;
@@ -2764,12 +2934,37 @@
     return copied;
   }
 
-  function loadTodayOverview() {
-    const defaults = {
+  function getTodayDateKey() {
+    return toDateKey(new Date());
+  }
+
+  function createEmptyTodayOverview(dateKey) {
+    const key = normalizeDateInputFromAny(dateKey || "") || getTodayDateKey();
+    return {
       checkin: "",
       checkout: "",
       occupancy: "",
+      dateKey: key,
     };
+  }
+
+  function normalizeTodayOverviewRecord(raw, clearWhenNotToday) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    const todayKey = getTodayDateKey();
+    const recordDateKey = normalizeDateInputFromAny(source.dateKey || source._dateKey || source.date || "");
+    if (clearWhenNotToday && recordDateKey !== todayKey) {
+      return createEmptyTodayOverview(todayKey);
+    }
+    return {
+      checkin: normalizeTodayOverviewValue(source.checkin),
+      checkout: normalizeTodayOverviewValue(source.checkout),
+      occupancy: normalizeOccupancyRateValue(source.occupancy),
+      dateKey: recordDateKey || todayKey,
+    };
+  }
+
+  function loadTodayOverview() {
+    const defaults = createEmptyTodayOverview(getTodayDateKey());
     try {
       const raw = localStorage.getItem(getScopedStorageKey(TODAY_OVERVIEW_KEY));
       if (!raw) {
@@ -2779,11 +2974,7 @@
       if (!parsed || typeof parsed !== "object") {
         return defaults;
       }
-      return {
-        checkin: normalizeTodayOverviewValue(parsed.checkin),
-        checkout: normalizeTodayOverviewValue(parsed.checkout),
-        occupancy: normalizeOccupancyRateValue(parsed.occupancy),
-      };
+      return normalizeTodayOverviewRecord(parsed, true);
     } catch (error) {
       console.error("loadTodayOverview error", error);
       return defaults;
@@ -2791,6 +2982,7 @@
   }
 
   function saveTodayOverview() {
+    state.todayOverview = normalizeTodayOverviewRecord(state.todayOverview, true);
     localStorage.setItem(getScopedStorageKey(TODAY_OVERVIEW_KEY), JSON.stringify(state.todayOverview));
     scheduleCloudPush();
   }
@@ -2870,29 +3062,29 @@
   }
 
   function mergeTodayOverview(baseOverview, incomingOverview, options) {
-    const base = baseOverview && typeof baseOverview === "object" ? baseOverview : {};
-    const incoming = incomingOverview && typeof incomingOverview === "object" ? incomingOverview : {};
+    const base = normalizeTodayOverviewRecord(baseOverview, true);
+    const incoming = normalizeTodayOverviewRecord(incomingOverview, true);
     const preferBase = Boolean(options && options.preferBaseOverview);
-    const hasIncomingCheckin = Object.prototype.hasOwnProperty.call(incoming, "checkin");
-    const hasIncomingCheckout = Object.prototype.hasOwnProperty.call(incoming, "checkout");
-    const hasIncomingOccupancy = Object.prototype.hasOwnProperty.call(incoming, "occupancy");
-    const incomingCheckin = normalizeTodayOverviewValue(hasIncomingCheckin ? incoming.checkin : "");
-    const incomingCheckout = normalizeTodayOverviewValue(hasIncomingCheckout ? incoming.checkout : "");
-    const incomingOccupancy = normalizeOccupancyRateValue(hasIncomingOccupancy ? incoming.occupancy : "");
+    const incomingCheckin = normalizeTodayOverviewValue(incoming.checkin);
+    const incomingCheckout = normalizeTodayOverviewValue(incoming.checkout);
+    const incomingOccupancy = normalizeOccupancyRateValue(incoming.occupancy);
     const baseCheckin = normalizeTodayOverviewValue(base.checkin);
     const baseCheckout = normalizeTodayOverviewValue(base.checkout);
     const baseOccupancy = normalizeOccupancyRateValue(base.occupancy);
+    const mergedDateKey = getTodayDateKey();
     if (preferBase) {
       return {
         checkin: baseCheckin || incomingCheckin,
         checkout: baseCheckout || incomingCheckout,
         occupancy: baseOccupancy || incomingOccupancy,
+        dateKey: mergedDateKey,
       };
     }
     return {
-      checkin: hasIncomingCheckin ? incomingCheckin : baseCheckin,
-      checkout: hasIncomingCheckout ? incomingCheckout : baseCheckout,
-      occupancy: hasIncomingOccupancy ? incomingOccupancy : baseOccupancy,
+      checkin: incomingCheckin || baseCheckin,
+      checkout: incomingCheckout || baseCheckout,
+      occupancy: incomingOccupancy || baseOccupancy,
+      dateKey: mergedDateKey,
     };
   }
 

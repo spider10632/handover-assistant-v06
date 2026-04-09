@@ -14,7 +14,7 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
     />
-    <link rel="stylesheet" href="styles.css?v=20260406-01" />
+    <link rel="stylesheet" href="styles.css?v=20260409-02" />
   </head>
   <body>
     <div class="bg-shape shape-a"></div>
@@ -54,6 +54,7 @@
                 住房率
                 <input id="today-occupancy-rate" type="text" inputmode="decimal" placeholder="例: 99.47" />
               </label>
+              <button id="today-overview-save-btn" class="btn btn-ghost today-kpi-save-btn" type="button">強制儲存</button>
             </div>
           </div>
 
@@ -197,6 +198,10 @@
                 <option value="pending">未完成</option>
                 <option value="done">已完成</option>
               </select>
+              <select id="query-category" aria-label="主分類查詢">
+                <option value="all" selected>全部主分類</option>
+              </select>
+              <input id="query-keyword" type="text" placeholder="關鍵字查詢（事項/說明/填寫人）" />
               <button id="search-btn" class="btn btn-secondary" type="button">查詢</button>
               <button id="clear-search-btn" class="btn btn-ghost" type="button">清除</button>
             </div>
@@ -301,6 +306,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260409-03" defer></script>
+    <script src="app.js?v=20260409-06" defer></script>
   </body>
 </html>
