@@ -13,6 +13,7 @@
       legacyKvdbKey: "handover-assistant-v07-caesarmetro",
     },
   });
+  const ALLOW_DYNAMIC_SERVER_LOGIN = true;
   const DEFAULT_SERVER_ID = "caesarmetro";
   const CLOUD_API_BASE_OVERRIDE =
     typeof window !== "undefined" && typeof window.HANDOVER_CLOUD_API_BASE === "string"
@@ -77,6 +78,7 @@
     reminderTimer: null,
     countdownTimer: null,
     currentServerId: null,
+    currentServerConfig: null,
     cloudInitDone: false,
     cloudPushTimer: null,
     cloudPushInFlight: false,
@@ -165,17 +167,35 @@
       return null;
     }
     const server = USER_SERVER_MAP[key];
-    if (!server || typeof server !== "object") {
+    if (server && typeof server === "object") {
+      return server;
+    }
+    return buildDynamicServerConfig(key);
+  }
+
+  function buildDynamicServerConfig(value) {
+    if (!ALLOW_DYNAMIC_SERVER_LOGIN) {
       return null;
     }
-    return server;
+    const key = normalizeServerInput(value);
+    if (!/^[a-z0-9][a-z0-9_-]{2,31}$/.test(key)) {
+      return null;
+    }
+    return {
+      serverId: key,
+      displayName: key,
+      cloudApiBase: "",
+      legacyKvdbBucket: "",
+      legacyKvdbKey: "",
+    };
   }
 
   function ensureServerContext() {
     if (state.currentServerId) {
       return;
     }
-    const fallback = USER_SERVER_MAP[DEFAULT_SERVER_ID];
+    const fallback = resolveServerByInput(DEFAULT_SERVER_ID);
+    state.currentServerConfig = fallback;
     state.currentServerId = fallback && fallback.serverId ? fallback.serverId : DEFAULT_SERVER_ID;
   }
 
@@ -186,8 +206,24 @@
 
   function getCurrentServerConfig() {
     const serverId = state.currentServerId || DEFAULT_SERVER_ID;
-    const server = USER_SERVER_MAP[serverId];
-    return server && typeof server === "object" ? server : null;
+    if (
+      state.currentServerConfig &&
+      typeof state.currentServerConfig === "object" &&
+      state.currentServerConfig.serverId === serverId
+    ) {
+      return state.currentServerConfig;
+    }
+    const mapped = USER_SERVER_MAP[serverId];
+    if (mapped && typeof mapped === "object") {
+      state.currentServerConfig = mapped;
+      return mapped;
+    }
+    const dynamic = buildDynamicServerConfig(serverId);
+    if (dynamic) {
+      state.currentServerConfig = dynamic;
+      return dynamic;
+    }
+    return null;
   }
 
   function normalizeCloudApiBase(baseUrl) {
@@ -494,10 +530,11 @@
     const entered = normalizeServerInput(els.passwordInput.value || "");
     const server = resolveServerByInput(entered);
     if (!server) {
-      showPasswordError("使用者錯誤，請再試一次。");
+      showPasswordError("使用者錯誤（請用英數、-、_，至少 3 碼）。");
       return;
     }
     state.currentServerId = server.serverId;
+    state.currentServerConfig = server;
     unlockAccessGate();
     init();
     showToast("已進入 " + server.displayName + " 伺服器。");

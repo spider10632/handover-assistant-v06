@@ -24,9 +24,9 @@
       <form id="password-form" class="password-card" autocomplete="off">
         <p class="password-eyebrow">SECURE ACCESS</p>
         <h1>工作交接助手</h1>
-        <p class="password-subtitle">請輸入使用者後進入系統</p>
-        <label for="password-input">使用者</label>
-        <input id="password-input" type="text" inputmode="text" placeholder="請輸入使用者" required />
+          <p class="password-subtitle">請輸入使用者後進入系統（不同使用者為獨立資料庫）</p>
+          <label for="password-input">使用者（英數、-、_）</label>
+          <input id="password-input" type="text" inputmode="text" placeholder="例：caesarmetro / hotel_a" required />
         <p id="password-error" class="password-error hidden"></p>
         <button id="password-submit" class="btn btn-primary" type="submit">進入系統</button>
       </form>
@@ -308,6 +308,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260409-08" defer></script>
+    <script src="app.js?v=20260409-10" defer></script>
   </body>
 </html>
