@@ -271,11 +271,12 @@
             </select>
           </label>
           <button id="export-word-btn" class="btn btn-primary" type="button">一鍵生成 Word</button>
+          <button id="export-excel-btn" class="btn btn-secondary" type="button">一鍵生成 Excel</button>
         </div>
       </section>
     </main>
 
-    <div class="app-version">VERSION 0.8</div>
+    <div class="app-version">VERSION 0.9</div>
 
     <aside id="upcoming-board" class="upcoming-board" aria-live="polite">
       <h3>下一件待辦提醒</h3>
@@ -296,9 +297,10 @@
 
     <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js" defer></script>
     <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260406-07" defer></script>
+    <script src="app.js?v=20260409-01" defer></script>
   </body>
 </html>

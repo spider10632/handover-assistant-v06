@@ -22,7 +22,7 @@
   const CLOUD_PUSH_DEBOUNCE_MS = 1200;
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
   const BACKUP_TYPE = "handover-backup";
-  const BACKUP_VERSION = "0.8";
+  const BACKUP_VERSION = "0.9";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
@@ -550,6 +550,7 @@
     els.upcomingSummary = document.getElementById("upcoming-summary");
     els.upcomingTaskList = document.getElementById("upcoming-task-list");
     els.exportWordBtn = document.getElementById("export-word-btn");
+    els.exportExcelBtn = document.getElementById("export-excel-btn");
     els.toast = document.getElementById("toast");
     els.notificationToggle = document.getElementById("notification-toggle");
     els.requestNotificationBtn = document.getElementById("request-notification-btn");
@@ -597,6 +598,9 @@
     }
     els.todayCategoryFilter.addEventListener("change", handleTodayCategoryChange);
     els.exportWordBtn.addEventListener("click", handleExportWord);
+    if (els.exportExcelBtn) {
+      els.exportExcelBtn.addEventListener("click", handleExportExcel);
+    }
     els.requestNotificationBtn.addEventListener("click", requestNotificationPermission);
     if (els.panelToggleButtons.length > 0) {
       els.panelToggleButtons.forEach(function (btn) {
@@ -1739,7 +1743,7 @@
     }
   }
 
-  async function handleExportWord() {
+  function collectExportContext() {
     const exportDateInput = els.exportDate ? String(els.exportDate.value || "").trim() : "";
     const effectiveDate = normalizeDateInputFromAny(exportDateInput || state.queryDate || "");
     const exportStatus = normalizeQueryStatus(els.exportStatus ? els.exportStatus.value : "all");
@@ -1754,10 +1758,27 @@
         return isTaskNotPastByDateKey(task, todayKey);
       });
     }
+    return {
+      effectiveDate: effectiveDate,
+      exportStatus: exportStatus,
+      list: list.slice().sort(sortForExportCategoryThenTime),
+      conditionText: conditionText,
+      includeDatePrefix: includeDatePrefix,
+    };
+  }
+
+  async function handleExportWord() {
+    const context = collectExportContext();
 
     if (window.docx && window.saveAs) {
       try {
-        await exportDocx(list, conditionText, effectiveDate, exportStatus, includeDatePrefix);
+        await exportDocx(
+          context.list,
+          context.conditionText,
+          context.effectiveDate,
+          context.exportStatus,
+          context.includeDatePrefix,
+        );
         showToast("Word file exported.");
         return;
       } catch (error) {
@@ -1765,8 +1786,101 @@
       }
     }
 
-    exportLegacyDoc(list, conditionText, effectiveDate, exportStatus, includeDatePrefix);
+    exportLegacyDoc(
+      context.list,
+      context.conditionText,
+      context.effectiveDate,
+      context.exportStatus,
+      context.includeDatePrefix,
+    );
     showToast("Exported via compatibility Word mode.");
+  }
+
+  function handleExportExcel() {
+    const context = collectExportContext();
+    try {
+      exportExcelFile(context.list, context.effectiveDate, context.includeDatePrefix);
+      showToast("Excel file exported.");
+    } catch (error) {
+      console.error("exportExcel error", error);
+      showToast("Excel 匯出失敗，請稍後重試。");
+    }
+  }
+
+  function exportExcelFile(tasks, exportDate, includeDatePrefix) {
+    const rows = buildExcelRows(tasks);
+    const headers = ["事項名稱", "主分類", "填寫人", "完成人", "交接說明"];
+    if (window.XLSX && window.XLSX.utils) {
+      const aoa = [headers].concat(
+        rows.map(function (row) {
+          return headers.map(function (key) {
+            return row[key];
+          });
+        }),
+      );
+      const worksheet = window.XLSX.utils.aoa_to_sheet(aoa);
+      worksheet["!cols"] = [{ wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 56 }];
+      const workbook = window.XLSX.utils.book_new();
+      const sheetName = sanitizeExcelSheetName(includeDatePrefix ? "未來待辦事項" : "每日報告");
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      window.XLSX.writeFile(workbook, buildExportFileName("xlsx", exportDate), { compression: true });
+      return;
+    }
+    exportExcelCsvFallback(rows, headers, exportDate);
+  }
+
+  function buildExcelRows(tasks) {
+    const list = Array.isArray(tasks) ? tasks : [];
+    return list.map(function (task) {
+      const completedBy = task && task.status === "done" && task.completedBy ? String(task.completedBy).trim() : "-";
+      const description = task && task.description ? String(task.description).replace(/\r?\n/g, " ").trim() : "-";
+      return {
+        事項名稱: task && task.title ? String(task.title).trim() : "-",
+        主分類: task && task.category ? String(task.category).trim() : "-",
+        填寫人: task && task.owner ? String(task.owner).trim() : "-",
+        完成人: completedBy || "-",
+        交接說明: description || "-",
+      };
+    });
+  }
+
+  function sanitizeExcelSheetName(name) {
+    const raw = String(name || "").trim() || "Sheet1";
+    const sanitized = raw.replace(/[\\\/\?\*\[\]:]/g, "_");
+    return sanitized.slice(0, 31) || "Sheet1";
+  }
+
+  function exportExcelCsvFallback(rows, headers, exportDate) {
+    const lines = [headers.join(",")].concat(
+      rows.map(function (row) {
+        return headers
+          .map(function (key) {
+            return csvEscape(row[key]);
+          })
+          .join(",");
+      }),
+    );
+    const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const filename = buildExportFileName("csv", exportDate);
+    if (window.saveAs) {
+      window.saveAs(blob, filename);
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function csvEscape(value) {
+    const text = String(value == null ? "" : value);
+    if (!/[",\r\n]/.test(text)) {
+      return text;
+    }
+    return '"' + text.replace(/"/g, '""') + '"';
   }
 
   function applyImportedBackup(imported, silent) {
