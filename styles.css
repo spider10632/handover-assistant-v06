@@ -1293,17 +1293,26 @@ body.theme-mono .upcoming-empty {
   }
 
   .today-pinned-zone {
-    margin-bottom: 14px;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
 
   .today-pinned-list {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 10px;
   }
 
   .today-item,
   .today-pinned-list > li {
     min-width: 0;
+  }
+
+  .today-item.pinned-zone-item {
+    border-color: var(--content-card-border);
+    border-left-color: #b38b4f;
+    background: linear-gradient(132deg, var(--content-card-bg), var(--content-card-bg-soft));
   }
 
   .today-time {
@@ -1318,6 +1327,15 @@ body.theme-mono .upcoming-empty {
     overflow: visible;
     text-overflow: clip;
     word-break: break-word;
+  }
+
+  .row-actions {
+    gap: 5px;
+  }
+
+  .action-btn {
+    padding: 5px 8px;
+    font-size: 0.74rem;
   }
 
   .query-bar .btn,
