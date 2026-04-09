@@ -908,6 +908,7 @@
       els.mobileTopBtn.addEventListener("click", handleMobileTopClick);
     }
     window.addEventListener("resize", syncMobileReminderUi);
+    window.addEventListener("scroll", updateMobileFloatingVisibility, { passive: true });
     if (els.panelToggleButtons.length > 0) {
       els.panelToggleButtons.forEach(function (btn) {
         btn.addEventListener("click", handlePanelToggle);
@@ -1128,6 +1129,7 @@
     if (els.upcomingBoard) {
       els.upcomingBoard.setAttribute("aria-hidden", isMobile && !state.mobileUpcomingOpen ? "true" : "false");
     }
+    updateMobileFloatingVisibility();
   }
 
   function setMobileUpcomingOpen(open) {
@@ -1168,6 +1170,34 @@
     } catch (error) {
       window.scrollTo(0, 0);
     }
+    updateMobileFloatingVisibility();
+  }
+
+  function updateMobileFloatingVisibility() {
+    if (typeof document === "undefined" || !document.body) {
+      return;
+    }
+    if (!isMobileViewport()) {
+      document.body.classList.remove("mobile-top-visible");
+      document.body.classList.remove("mobile-version-visible");
+      return;
+    }
+    const root = document.documentElement;
+    const body = document.body;
+    const scrollTop = Math.max(
+      window.pageYOffset || 0,
+      root && root.scrollTop ? root.scrollTop : 0,
+      body && body.scrollTop ? body.scrollTop : 0,
+    );
+    const viewportHeight = window.innerHeight || (root ? root.clientHeight : 0) || 0;
+    const docHeight = Math.max(
+      root && root.scrollHeight ? root.scrollHeight : 0,
+      body && body.scrollHeight ? body.scrollHeight : 0,
+    );
+    const nearBottom = scrollTop + viewportHeight >= docHeight - 32;
+    const shouldShowTop = scrollTop > 140 && !state.mobileUpcomingOpen;
+    body.classList.toggle("mobile-top-visible", shouldShowTop);
+    body.classList.toggle("mobile-version-visible", nearBottom);
   }
 
   function toggleAllDayMode() {
@@ -2120,7 +2150,7 @@
       return;
     }
     const now = Date.now();
-    let dueNowCount = 0;
+    const dueNow = [];
     const within30 = [];
     const within60 = [];
 
@@ -2132,7 +2162,7 @@
       .forEach(function (task) {
         const diffMs = new Date(getTaskStartAt(task)).getTime() - now;
         if (diffMs <= 0) {
-          dueNowCount += 1;
+          dueNow.push(task);
           return;
         }
         if (diffMs <= 30 * 60 * 1000) {
@@ -2144,19 +2174,27 @@
         }
       });
 
-    updateMobileReminderBadge(dueNowCount);
+    updateMobileReminderBadge(dueNow.length);
 
-    const total = within30.length + within60.length;
+    const total = dueNow.length + within30.length + within60.length;
     if (total === 0) {
       els.upcomingSummary.textContent = "目前沒有 1 小時內待辦。";
       els.upcomingTaskList.innerHTML = '<li class="upcoming-empty">30 分鐘與 1 小時提醒區間目前無待辦。</li>';
       return;
     }
 
-    els.upcomingSummary.textContent =
-      "30 分鐘內 " + within30.length + " 筆，1 小時內 " + within60.length + " 筆。";
+    const summaryParts = [];
+    if (dueNow.length > 0) {
+      summaryParts.push("已到時間 " + dueNow.length + " 筆");
+    }
+    summaryParts.push("30 分鐘內 " + within30.length + " 筆");
+    summaryParts.push("1 小時內 " + within60.length + " 筆");
+    els.upcomingSummary.textContent = summaryParts.join("，") + "。";
 
     const items = [];
+    dueNow.forEach(function (task) {
+      items.push(renderUpcomingItem(task, "已到時間"));
+    });
     within30.forEach(function (task) {
       items.push(renderUpcomingItem(task, "30 分鐘內"));
     });
