@@ -48,6 +48,8 @@
   const EXPORT_FONT_EAST_ASIA = "DFKai-SB";
   const EXPORT_FONT_LATIN = "DFKai-SB";
   const EXPORT_DEFAULT_COLOR = "1F2A2A";
+  const EXCEL_DAY_BLOCK_COLORS = Object.freeze(["FFF4DD", "E8F3FF", "EAF8E6", "FCEEF6", "EFEAFF", "E8F6F5"]);
+  const EXCEL_BLOCK_BORDER_COLOR = "B89B68";
   const EXPORT_CATEGORY_COLORS = Object.freeze({
     廣場: "B42318",
     包裹代收: "1D4ED8",
@@ -828,6 +830,14 @@
     els.taskCategory.addEventListener("change", updateSubcategoryOptions);
     els.taskSubcategory.addEventListener("change", updateFormLockState);
     els.allDayBtn.addEventListener("click", toggleAllDayMode);
+    if (els.taskStartAt) {
+      els.taskStartAt.addEventListener("input", handleTimeDigitsInput);
+      els.taskStartAt.addEventListener("blur", handleTimeDigitsBlur);
+    }
+    if (els.taskEndAt) {
+      els.taskEndAt.addEventListener("input", handleTimeDigitsInput);
+      els.taskEndAt.addEventListener("blur", handleTimeDigitsBlur);
+    }
     els.clearFormBtn.addEventListener("click", handleClearForm);
     els.cancelEditBtn.addEventListener("click", cancelEditing);
     els.searchBtn.addEventListener("click", applyDateQuery);
@@ -905,18 +915,11 @@
       if (!input) {
         return;
       }
-      if (input.type === "time") {
-        input.setAttribute("step", "60");
-        input.removeAttribute("inputmode");
-        input.removeAttribute("maxlength");
-        input.removeAttribute("pattern");
-        input.removeAttribute("placeholder");
-      } else if (input.type === "date") {
-        input.removeAttribute("inputmode");
-        input.removeAttribute("maxlength");
-        input.removeAttribute("pattern");
-        input.removeAttribute("placeholder");
-      }
+      input.type = "text";
+      input.setAttribute("inputmode", "numeric");
+      input.setAttribute("maxlength", "4");
+      input.setAttribute("pattern", "([0-9]{4}|[0-9]{2}:[0-9]{2})");
+      input.setAttribute("placeholder", "HHMM");
     });
   }
 
@@ -1125,10 +1128,77 @@
     return "";
   }
 
+  function sanitizeTimeDigitsValue(value) {
+    return String(value || "")
+      .replace(/\D/g, "")
+      .slice(0, 4);
+  }
+
+  function normalizeCompactTimeText(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return "";
+    }
+
+    const colonMatch = text.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (colonMatch) {
+      const hh = Number(colonMatch[1]);
+      const mm = Number(colonMatch[2]);
+      if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+        return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+      }
+      return "";
+    }
+
+    const digits = sanitizeTimeDigitsValue(text);
+    if (!digits) {
+      return "";
+    }
+
+    let hh = Number.NaN;
+    let mm = Number.NaN;
+    if (digits.length <= 2) {
+      hh = Number(digits);
+      mm = 0;
+    } else if (digits.length === 3) {
+      hh = Number(digits.slice(0, 1));
+      mm = Number(digits.slice(1));
+    } else {
+      hh = Number(digits.slice(0, 2));
+      mm = Number(digits.slice(2));
+    }
+
+    if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+      return "";
+    }
+    return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+  }
+
+  function handleTimeDigitsInput(event) {
+    const input = event && event.target ? event.target : null;
+    if (!input) {
+      return;
+    }
+    input.value = sanitizeTimeDigitsValue(input.value);
+  }
+
+  function handleTimeDigitsBlur(event) {
+    const input = event && event.target ? event.target : null;
+    if (!input) {
+      return;
+    }
+    const part = input === els.taskEndAt ? "end" : "start";
+    input.value = normalizeTimeInputFromAny(input.value, part);
+  }
+
   function normalizeTimeInputFromAny(value, part) {
     const currentValue = String(value || "").trim();
     if (!currentValue) {
       return "";
+    }
+    const compact = normalizeCompactTimeText(currentValue);
+    if (compact) {
+      return compact;
     }
     const direct = currentValue.match(/^(\d{1,2}):(\d{2})$/);
     if (direct) {
@@ -2209,12 +2279,23 @@
   function handleExportExcel() {
     const context = collectExportContext();
     try {
-      exportExcelFile(context.list, context.effectiveDate, context.includeDatePrefix);
+      const tasksForExcel = context.includeDatePrefix
+        ? filterExcelFutureTasksAfterToday(context.list)
+        : context.list;
+      exportExcelFile(tasksForExcel, context.effectiveDate, context.includeDatePrefix);
       showToast("Excel file exported.");
     } catch (error) {
       console.error("exportExcel error", error);
       showToast("Excel 匯出失敗，請稍後重試。");
     }
+  }
+
+  function filterExcelFutureTasksAfterToday(tasks) {
+    const todayKey = toDateKey(new Date());
+    return (Array.isArray(tasks) ? tasks : []).filter(function (task) {
+      const key = getExportTaskDateKey(task);
+      return Boolean(key) && key > todayKey;
+    });
   }
 
   function exportExcelFile(tasks, exportDate, includeDatePrefix) {
@@ -2228,6 +2309,7 @@
       worksheet["!cols"] = [{ wch: 16 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 22 }];
       worksheet["!rows"] = buildExcelRowHeights(aoa);
       worksheet["!merges"] = merges;
+      applyExcelWorksheetStyles(worksheet, built.meta, headers.length);
       worksheet["!margins"] = {
         left: 0.2,
         right: 0.2,
@@ -2274,8 +2356,14 @@
     const cols = Array.isArray(headers) && headers.length > 0 ? headers.length : 5;
     const aoa = [];
     const merges = [];
+    const meta = {
+      mergedRows: [],
+      headerRows: [],
+      dateTitleRows: [],
+      dayBlocks: [],
+    };
 
-    function pushMergedRow(text) {
+    function pushMergedRow(text, type) {
       const rowIndex = aoa.length;
       const row = [String(text || "")];
       while (row.length < cols) {
@@ -2286,13 +2374,22 @@
         s: { r: rowIndex, c: 0 },
         e: { r: rowIndex, c: cols - 1 },
       });
+      meta.mergedRows.push(rowIndex);
+      if (type === "date-title") {
+        meta.dateTitleRows.push(rowIndex);
+      }
+      return rowIndex;
     }
 
     function pushHeaderRow() {
+      const rowIndex = aoa.length;
       aoa.push(headers.slice());
+      meta.headerRows.push(rowIndex);
+      return rowIndex;
     }
 
     function pushTaskRows(taskList) {
+      const startRow = aoa.length;
       const rows = buildExcelRows(taskList);
       if (rows.length === 0) {
         const emptyRow = [];
@@ -2300,7 +2397,7 @@
           emptyRow.push("-");
         }
         aoa.push(emptyRow);
-        return;
+        return { startRow: startRow, endRow: aoa.length - 1 };
       }
       rows.forEach(function (row) {
         aoa.push(
@@ -2309,36 +2406,174 @@
           }),
         );
       });
+      return { startRow: startRow, endRow: aoa.length - 1 };
     }
 
     if (!includeDatePrefix) {
-      pushMergedRow(buildArrDepOccLine(exportDate));
+      pushMergedRow(buildArrDepOccLine(exportDate), "summary");
     }
-    pushMergedRow(includeDatePrefix ? "Future To-Do / 未來待辦事項" : "Daily Briefing / 每日報告");
+    pushMergedRow(includeDatePrefix ? "Future To-Do / 未來待辦事項" : "Daily Briefing / 每日報告", "section-title");
     aoa.push([]);
 
     if (!includeDatePrefix) {
+      const singleBlockStart = aoa.length;
       pushHeaderRow();
-      pushTaskRows(list);
-      return { aoa: aoa, merges: merges };
+      const singleRows = pushTaskRows(list);
+      meta.dayBlocks.push({
+        startRow: singleBlockStart,
+        endRow: Math.max(singleRows.endRow, singleBlockStart),
+        color: EXCEL_DAY_BLOCK_COLORS[0],
+      });
+      return { aoa: aoa, merges: merges, meta: meta };
     }
 
     const grouped = groupExportTasksByDate(list);
     if (grouped.length === 0) {
+      const emptyBlockStart = aoa.length;
       pushHeaderRow();
-      pushTaskRows([]);
-      return { aoa: aoa, merges: merges };
+      const emptyRows = pushTaskRows([]);
+      meta.dayBlocks.push({
+        startRow: emptyBlockStart,
+        endRow: Math.max(emptyRows.endRow, emptyBlockStart),
+        color: EXCEL_DAY_BLOCK_COLORS[0],
+      });
+      return { aoa: aoa, merges: merges, meta: meta };
     }
 
     grouped.forEach(function (group, index) {
-      pushMergedRow("日期：" + group.label);
+      const blockStart = aoa.length;
+      pushMergedRow("日期：" + group.label, "date-title");
       pushHeaderRow();
-      pushTaskRows(group.tasks);
+      const taskRows = pushTaskRows(group.tasks);
+      meta.dayBlocks.push({
+        startRow: blockStart,
+        endRow: Math.max(taskRows.endRow, blockStart),
+        color: EXCEL_DAY_BLOCK_COLORS[index % EXCEL_DAY_BLOCK_COLORS.length],
+      });
       if (index < grouped.length - 1) {
         aoa.push([]);
       }
     });
-    return { aoa: aoa, merges: merges };
+    return { aoa: aoa, merges: merges, meta: meta };
+  }
+
+  function applyExcelWorksheetStyles(worksheet, meta, colCount) {
+    if (!worksheet || !window.XLSX || !window.XLSX.utils) {
+      return;
+    }
+    const cols = Number(colCount) > 0 ? Number(colCount) : 5;
+    const styleMeta = meta && typeof meta === "object" ? meta : {};
+    const dayBlocks = Array.isArray(styleMeta.dayBlocks) ? styleMeta.dayBlocks : [];
+    const headerRows = Array.isArray(styleMeta.headerRows) ? styleMeta.headerRows : [];
+    const mergedRows = Array.isArray(styleMeta.mergedRows) ? styleMeta.mergedRows : [];
+    const dateTitleRowSet = new Set(Array.isArray(styleMeta.dateTitleRows) ? styleMeta.dateTitleRows : []);
+
+    function encodeCell(rowIndex, colIndex) {
+      return window.XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+    }
+
+    function ensureCell(rowIndex, colIndex) {
+      const address = encodeCell(rowIndex, colIndex);
+      if (!worksheet[address]) {
+        worksheet[address] = { t: "s", v: "" };
+      }
+      return worksheet[address];
+    }
+
+    function createBorder(color) {
+      const rgb = String(color || "").trim() || EXCEL_BLOCK_BORDER_COLOR;
+      return {
+        top: { style: "thin", color: { rgb: rgb } },
+        bottom: { style: "thin", color: { rgb: rgb } },
+        left: { style: "thin", color: { rgb: rgb } },
+        right: { style: "thin", color: { rgb: rgb } },
+      };
+    }
+
+    function createFont(options) {
+      const style = options && typeof options === "object" ? options : {};
+      return {
+        name: EXPORT_FONT_EAST_ASIA,
+        sz: Number(style.size) > 0 ? Number(style.size) : 12,
+        bold: Boolean(style.bold),
+        color: { rgb: String(style.color || "1F2A2A").replace(/^#/, "") },
+      };
+    }
+
+    function createAlignment(options) {
+      const style = options && typeof options === "object" ? options : {};
+      return {
+        horizontal: style.horizontal || "center",
+        vertical: style.vertical || "center",
+        wrapText: style.wrapText !== false,
+      };
+    }
+
+    function applyStyle(rowIndex, colIndex, options) {
+      const style = options && typeof options === "object" ? options : {};
+      const cell = ensureCell(rowIndex, colIndex);
+      const nextStyle = {
+        font: createFont(style.font),
+        alignment: createAlignment(style.alignment),
+      };
+      if (style.fillColor) {
+        nextStyle.fill = {
+          patternType: "solid",
+          fgColor: { rgb: String(style.fillColor).replace(/^#/, "") },
+        };
+      }
+      if (style.useBorder !== false) {
+        nextStyle.border = createBorder(style.borderColor);
+      }
+      cell.s = nextStyle;
+    }
+
+    dayBlocks.forEach(function (block) {
+      const startRow = Number(block && block.startRow);
+      const endRow = Number(block && block.endRow);
+      if (!Number.isFinite(startRow) || !Number.isFinite(endRow) || endRow < startRow) {
+        return;
+      }
+      const fillColor = String(block && block.color ? block.color : EXCEL_DAY_BLOCK_COLORS[0]).replace(/^#/, "");
+      for (let r = startRow; r <= endRow; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          applyStyle(r, c, {
+            fillColor: fillColor,
+            borderColor: EXCEL_BLOCK_BORDER_COLOR,
+            font: {
+              bold: headerRows.indexOf(r) >= 0 || dateTitleRowSet.has(r),
+              size: 12,
+            },
+          });
+        }
+      }
+    });
+
+    mergedRows.forEach(function (rowIndex) {
+      for (let c = 0; c < cols; c += 1) {
+        applyStyle(rowIndex, c, {
+          fillColor: dateTitleRowSet.has(rowIndex) ? "F1DFC0" : "EFE8DB",
+          borderColor: EXCEL_BLOCK_BORDER_COLOR,
+          font: {
+            bold: true,
+            size: dateTitleRowSet.has(rowIndex) ? 12 : 13,
+          },
+        });
+      }
+    });
+
+    headerRows.forEach(function (rowIndex) {
+      for (let c = 0; c < cols; c += 1) {
+        applyStyle(rowIndex, c, {
+          fillColor: "E6D6BC",
+          borderColor: EXCEL_BLOCK_BORDER_COLOR,
+          font: {
+            bold: true,
+            size: 12,
+          },
+        });
+      }
+    });
   }
 
   function sanitizeExcelSheetName(name) {
@@ -3705,8 +3940,12 @@
         part === "end" ? 59 : 0,
       );
     }
-    const timeOnly = normalized.match(/^(\d{1,2}):(\d{2})$/);
-    if (timeOnly) {
+    const compactTime = normalizeCompactTimeText(normalized);
+    if (compactTime) {
+      const timeOnly = compactTime.match(/^(\d{2}):(\d{2})$/);
+      if (!timeOnly) {
+        return Number.NaN;
+      }
       const baseDate = normalizeDateInputFromAny(baseDateInput) || toDateKey(new Date());
       const dayMatch = baseDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       if (!dayMatch) {
@@ -3915,4 +4154,3 @@
     }, TOAST_MS);
   }
 })();
-

@@ -139,10 +139,26 @@
               時間（可跨日：起日/起時 至 迄日/迄時，可留空）
               <div class="due-input-row">
                 <input id="task-start-date" name="taskStartDate" type="date" />
-                <input id="task-start-at" name="startAt" type="time" step="60" />
+                <input
+                  id="task-start-at"
+                  name="startAt"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="4"
+                  pattern="([0-9]{4}|[0-9]{2}:[0-9]{2})"
+                  placeholder="HHMM"
+                />
                 <span class="time-range-sep">至</span>
                 <input id="task-end-date" name="taskEndDate" type="date" />
-                <input id="task-end-at" name="endAt" type="time" step="60" />
+                <input
+                  id="task-end-at"
+                  name="endAt"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="4"
+                  pattern="([0-9]{4}|[0-9]{2}:[0-9]{2})"
+                  placeholder="HHMM"
+                />
                 <button id="all-day-btn" class="btn btn-ghost all-day-btn" type="button" aria-pressed="false">全日</button>
               </div>
             </label>
@@ -308,6 +324,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260409-12" defer></script>
+    <script src="app.js?v=20260409-13" defer></script>
   </body>
 </html>
