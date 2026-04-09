@@ -1815,13 +1815,14 @@
       const aoa = built.aoa;
       const merges = built.merges;
       const worksheet = window.XLSX.utils.aoa_to_sheet(aoa);
-      worksheet["!cols"] = [{ wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 56 }];
+      worksheet["!cols"] = [{ wch: 16 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 22 }];
+      worksheet["!rows"] = buildExcelRowHeights(aoa);
       worksheet["!merges"] = merges;
       worksheet["!margins"] = {
-        left: 0.25,
-        right: 0.25,
-        top: 0.3,
-        bottom: 0.3,
+        left: 0.2,
+        right: 0.2,
+        top: 0.25,
+        bottom: 0.25,
         header: 0.15,
         footer: 0.15,
       };
@@ -1844,7 +1845,7 @@
     const list = Array.isArray(tasks) ? tasks : [];
     return list.map(function (task) {
       const completedBy = task && task.status === "done" && task.completedBy ? String(task.completedBy).trim() : "-";
-      const description = task && task.description ? String(task.description).replace(/\r?\n/g, " ").trim() : "-";
+      const description = formatExcelDescription(task && task.description ? task.description : "");
       return {
         事項名稱: task && task.title ? String(task.title).trim() : "-",
         主分類: task && task.category ? String(task.category).trim() : "-",
@@ -1929,6 +1930,47 @@
     const raw = String(name || "").trim() || "Sheet1";
     const sanitized = raw.replace(/[\\\/\?\*\[\]:]/g, "_");
     return sanitized.slice(0, 31) || "Sheet1";
+  }
+
+  function buildExcelRowHeights(aoa) {
+    const rows = [];
+    const list = Array.isArray(aoa) ? aoa : [];
+    for (let i = 0; i < list.length; i += 1) {
+      const row = Array.isArray(list[i]) ? list[i] : [];
+      const joined = row
+        .map(function (cell) {
+          return String(cell == null ? "" : cell);
+        })
+        .join(" ");
+      if (!joined.trim()) {
+        rows.push({ hpt: 6 });
+        continue;
+      }
+      if (row.some(function (cell) { return String(cell == null ? "" : cell).indexOf("\n") >= 0; })) {
+        rows.push({ hpt: 28 });
+        continue;
+      }
+      rows.push({ hpt: 18 });
+    }
+    return rows;
+  }
+
+  function formatExcelDescription(raw) {
+    const text = String(raw || "")
+      .replace(/\r?\n/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) {
+      return "-";
+    }
+    const perLine = 22;
+    if (text.length <= perLine) {
+      return text;
+    }
+    if (text.length <= perLine * 2) {
+      return text.slice(0, perLine) + "\n" + text.slice(perLine);
+    }
+    return text.slice(0, perLine) + "\n" + text.slice(perLine, perLine * 2 - 1) + "…";
   }
 
   function exportExcelCsvFallback(rows, headers, exportDate) {
