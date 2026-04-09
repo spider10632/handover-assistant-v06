@@ -14,7 +14,7 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
     />
-    <link rel="stylesheet" href="styles.css?v=20260409-05" />
+    <link rel="stylesheet" href="styles.css?v=20260409-06" />
   </head>
   <body>
     <div class="bg-shape shape-a"></div>
@@ -302,7 +302,10 @@
     <div class="app-version">VERSION 0.9</div>
 
     <aside id="upcoming-board" class="upcoming-board" aria-live="polite">
-      <h3>下一件待辦提醒</h3>
+      <div class="upcoming-head">
+        <h3>下一件待辦提醒</h3>
+        <button id="mobile-upcoming-close" class="btn btn-ghost mobile-upcoming-close" type="button">關閉</button>
+      </div>
       <p id="upcoming-summary" class="upcoming-summary">目前沒有 1 小時內待辦。</p>
       <ul id="upcoming-task-list" class="upcoming-task-list">
         <li class="upcoming-empty">30 分鐘與 1 小時提醒區目前無待辦。</li>
@@ -310,11 +313,22 @@
       <div class="reminder-controls">
         <label class="checkbox">
           <input id="notification-toggle" type="checkbox" checked />
-          啟用瀏覽器通知
+          通知開啟
         </label>
         <button id="request-notification-btn" class="btn btn-secondary" type="button">授權通知</button>
       </div>
     </aside>
+
+    <div id="mobile-upcoming-overlay" class="mobile-upcoming-overlay" aria-hidden="true"></div>
+    <button id="mobile-upcoming-toggle" class="mobile-upcoming-toggle" type="button" aria-expanded="false" aria-controls="upcoming-board">
+      <i class="ti ti-bell-ringing" aria-hidden="true"></i>
+      <span class="mobile-upcoming-toggle-text">下一件待辦</span>
+      <span id="mobile-upcoming-badge" class="mobile-upcoming-badge hidden">0</span>
+    </button>
+    <button id="mobile-top-btn" class="mobile-top-btn" type="button" aria-label="回到頂部">
+      <i class="ti ti-arrow-up" aria-hidden="true"></i>
+      <span>TOP</span>
+    </button>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -324,6 +338,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260409-13" defer></script>
+    <script src="app.js?v=20260409-14" defer></script>
   </body>
 </html>

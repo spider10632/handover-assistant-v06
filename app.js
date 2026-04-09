@@ -34,6 +34,7 @@
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
+  const MOBILE_MAX_WIDTH = 760;
   const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "預訂", "餐飲部", "待回覆信件", "郵寄", "行政", "公告", "遺留物"];
   const SUBCATEGORY_MAP = {
     廣場: ["保留車位", "其他"],
@@ -144,6 +145,7 @@
     editingTaskId: null,
     reminderTimer: null,
     countdownTimer: null,
+    mobileUpcomingOpen: false,
     currentServerId: null,
     currentServerConfig: null,
     currentProfile: null,
@@ -188,6 +190,7 @@
     state.todayOverview = loadTodayOverview();
     state.currentDayKey = getTodayDateKey();
     bindEvents();
+    syncMobileReminderUi();
     syncCollapsiblePanels();
     setupCategorySelectOptions();
     if (els.queryCategory) {
@@ -814,6 +817,11 @@
     els.toast = document.getElementById("toast");
     els.notificationToggle = document.getElementById("notification-toggle");
     els.requestNotificationBtn = document.getElementById("request-notification-btn");
+    els.mobileUpcomingToggle = document.getElementById("mobile-upcoming-toggle");
+    els.mobileUpcomingBadge = document.getElementById("mobile-upcoming-badge");
+    els.mobileUpcomingClose = document.getElementById("mobile-upcoming-close");
+    els.mobileUpcomingOverlay = document.getElementById("mobile-upcoming-overlay");
+    els.mobileTopBtn = document.getElementById("mobile-top-btn");
     els.exportDate = document.getElementById("export-date");
     els.exportStatus = document.getElementById("export-status");
     els.taskListFilter = document.getElementById("task-list-filter");
@@ -884,7 +892,22 @@
     if (els.exportExcelBtn) {
       els.exportExcelBtn.addEventListener("click", handleExportExcel);
     }
-    els.requestNotificationBtn.addEventListener("click", requestNotificationPermission);
+    if (els.requestNotificationBtn) {
+      els.requestNotificationBtn.addEventListener("click", requestNotificationPermission);
+    }
+    if (els.mobileUpcomingToggle) {
+      els.mobileUpcomingToggle.addEventListener("click", handleMobileUpcomingToggle);
+    }
+    if (els.mobileUpcomingClose) {
+      els.mobileUpcomingClose.addEventListener("click", handleMobileUpcomingClose);
+    }
+    if (els.mobileUpcomingOverlay) {
+      els.mobileUpcomingOverlay.addEventListener("click", handleMobileUpcomingClose);
+    }
+    if (els.mobileTopBtn) {
+      els.mobileTopBtn.addEventListener("click", handleMobileTopClick);
+    }
+    window.addEventListener("resize", syncMobileReminderUi);
     if (els.panelToggleButtons.length > 0) {
       els.panelToggleButtons.forEach(function (btn) {
         btn.addEventListener("click", handlePanelToggle);
@@ -894,6 +917,11 @@
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) {
         checkReminders();
+      }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && state.mobileUpcomingOpen) {
+        handleMobileUpcomingClose();
       }
     });
   }
@@ -1074,6 +1102,72 @@
     const isCollapsed = panel.classList.contains("is-collapsed");
     btn.textContent = isCollapsed ? "展開" : "收合";
     btn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+  }
+
+  function isMobileViewport() {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false;
+    }
+    return window.matchMedia("(max-width: " + MOBILE_MAX_WIDTH + "px)").matches;
+  }
+
+  function syncMobileReminderUi() {
+    const isMobile = isMobileViewport();
+    if (!isMobile && state.mobileUpcomingOpen) {
+      state.mobileUpcomingOpen = false;
+    }
+    if (document.body) {
+      document.body.classList.toggle("mobile-upcoming-open", isMobile && state.mobileUpcomingOpen);
+    }
+    if (els.mobileUpcomingToggle) {
+      els.mobileUpcomingToggle.setAttribute("aria-expanded", state.mobileUpcomingOpen ? "true" : "false");
+    }
+    if (els.mobileUpcomingOverlay) {
+      els.mobileUpcomingOverlay.setAttribute("aria-hidden", state.mobileUpcomingOpen ? "false" : "true");
+    }
+    if (els.upcomingBoard) {
+      els.upcomingBoard.setAttribute("aria-hidden", isMobile && !state.mobileUpcomingOpen ? "true" : "false");
+    }
+  }
+
+  function setMobileUpcomingOpen(open) {
+    state.mobileUpcomingOpen = Boolean(open);
+    syncMobileReminderUi();
+  }
+
+  function handleMobileUpcomingToggle() {
+    if (!isMobileViewport()) {
+      return;
+    }
+    setMobileUpcomingOpen(!state.mobileUpcomingOpen);
+  }
+
+  function handleMobileUpcomingClose() {
+    setMobileUpcomingOpen(false);
+  }
+
+  function updateMobileReminderBadge(count) {
+    if (!els.mobileUpcomingBadge || !els.mobileUpcomingToggle) {
+      return;
+    }
+    const total = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+    if (total > 0) {
+      els.mobileUpcomingBadge.textContent = String(total);
+      els.mobileUpcomingBadge.classList.remove("hidden");
+      els.mobileUpcomingToggle.classList.add("has-alert");
+      return;
+    }
+    els.mobileUpcomingBadge.textContent = "0";
+    els.mobileUpcomingBadge.classList.add("hidden");
+    els.mobileUpcomingToggle.classList.remove("has-alert");
+  }
+
+  function handleMobileTopClick() {
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (error) {
+      window.scrollTo(0, 0);
+    }
   }
 
   function toggleAllDayMode() {
@@ -2022,7 +2116,11 @@
   }
 
   function renderUpcomingBoard() {
+    if (!els.upcomingSummary || !els.upcomingTaskList) {
+      return;
+    }
     const now = Date.now();
+    let dueNowCount = 0;
     const within30 = [];
     const within60 = [];
 
@@ -2033,7 +2131,8 @@
       .sort(sortByDueTime)
       .forEach(function (task) {
         const diffMs = new Date(getTaskStartAt(task)).getTime() - now;
-        if (diffMs < 0) {
+        if (diffMs <= 0) {
+          dueNowCount += 1;
           return;
         }
         if (diffMs <= 30 * 60 * 1000) {
@@ -2044,6 +2143,8 @@
           within60.push(task);
         }
       });
+
+    updateMobileReminderBadge(dueNowCount);
 
     const total = within30.length + within60.length;
     if (total === 0) {
