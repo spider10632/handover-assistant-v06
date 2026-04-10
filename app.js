@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
 
   const STORAGE_KEY = "handover_tasks_v1";
@@ -3815,6 +3815,15 @@
     saveTodayOverview();
     renderTodayOverviewBar();
     renderAll();
+    ensureTaskTranslationsForLanguage(state.uiLanguage)
+      .then(function (changed) {
+        if (changed) {
+          renderAll();
+        }
+      })
+      .catch(function (error) {
+        console.error("applyImportedBackup translation error", error);
+      });
     if (!silent) {
       showToast("已讀取資料，共 " + state.tasks.length + " 筆。");
     }
@@ -5328,3 +5337,4 @@
     }, TOAST_MS);
   }
 })();
+
