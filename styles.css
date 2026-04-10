@@ -556,6 +556,7 @@ textarea {
 }
 
 .today-pinned-zone {
+  position: relative;
   margin: 0 0 12px;
   padding: 11px;
   border-radius: var(--radius-md);
@@ -567,7 +568,14 @@ textarea {
   margin: 0 0 8px;
   font-size: 0.93rem;
   font-weight: 700;
-  color: #5f3d13;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  color: #775a19;
+  position: relative;
+  z-index: 1;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .today-pinned-list,
@@ -1180,6 +1188,10 @@ body.theme-mono .today-pinned-zone,
 body.theme-mono .today-item,
 body.theme-mono .upcoming-item {
   border-color: rgba(102, 102, 102, 0.34);
+}
+
+body.theme-mono .today-pinned-title {
+  color: #222;
 }
 
 body.theme-mono .today-item {

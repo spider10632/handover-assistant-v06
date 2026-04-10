@@ -597,7 +597,7 @@
     setElementText("today-checkout-label", getUiText("todayCheckoutLabel"));
     setElementText("today-occ-label", getUiText("todayOccLabel"));
     setElementText("today-overview-save-btn", getUiText("save"));
-    setElementText("today-pinned-title", getUiText("todayPinnedTitle"));
+    setElementText("today-pinned-title", getUiText("todayPinnedTitle") || (lang === "en" ? "Pinned" : "置頂區"));
     setElementText("today-filter-label", getUiText("todayFilterLabel"));
     setElementText("task-form-title", getUiText("taskFormTitle"));
     setElementText("task-category-label", getUiText("taskCategoryLabel"));
