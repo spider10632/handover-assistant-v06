@@ -454,11 +454,28 @@
     updateFormLockState();
     setDefaultDueTime();
     renderTodayOverviewBar();
+    const activeLang = normalizeUiLanguage(state.uiLanguage);
+    const startRuntime = function () {
+      startReminderLoop();
+      startCountdownLoop();
+      initCloudSync();
+    };
+
+    if (activeLang === "en") {
+      ensureTaskTranslationsForLanguage(activeLang)
+        .catch(function (error) {
+          console.error("initial translation warmup error", error);
+        })
+        .finally(function () {
+          renderAll();
+          startRuntime();
+        });
+      return;
+    }
+
     renderAll();
-    startReminderLoop();
-    startCountdownLoop();
-    initCloudSync();
-    ensureTaskTranslationsForLanguage(state.uiLanguage)
+    startRuntime();
+    ensureTaskTranslationsForLanguage(activeLang)
       .then(function (changed) {
         if (changed) {
           renderAll();
@@ -1241,7 +1258,7 @@
     if (!task || typeof task !== "object") {
       return "";
     }
-    return [String(task.title || ""), String(task.description || ""), String(task.subcategory || "")].join("\n@@\n");
+    return "desc::" + String(task.description || "");
   }
 
   function hasCjkText(text) {
@@ -1303,25 +1320,18 @@
       return false;
     }
     const target = normalizeUiLanguage(targetLang);
-    const fields = ["title", "description", "subcategory"];
-    for (let i = 0; i < fields.length; i += 1) {
-      const field = fields[i];
-      const source = String(task[field] || "").trim();
-      if (!source) {
-        continue;
-      }
-      if (!shouldTranslateTextForTarget(source, target)) {
-        continue;
-      }
-      const translated = String(translationEntry[field] || "").trim();
-      if (!translated) {
-        return false;
-      }
-      // If translated content is exactly same as source for a field that should be translated,
-      // treat it as stale/failed cache and retry translation.
-      if (translated === source) {
-        return false;
-      }
+    const source = String(task.description || "").trim();
+    if (!source || !shouldTranslateTextForTarget(source, target)) {
+      return true;
+    }
+    const translated = String(translationEntry.description || "").trim();
+    if (!translated) {
+      return false;
+    }
+    // If translated note is exactly same as source when translation is required,
+    // treat it as stale/failed cache and retry.
+    if (translated === source) {
+      return false;
     }
     return true;
   }
@@ -1477,18 +1487,13 @@
       ) {
         return;
       }
-      const title = String(task.title || "").trim();
       const description = String(task.description || "").trim();
-      const subcategory = String(task.subcategory || "").trim();
-      const hasAnyNeed =
-        shouldTranslateTextForTarget(title, target) ||
-        shouldTranslateTextForTarget(description, target) ||
-        shouldTranslateTextForTarget(subcategory, target);
+      const hasAnyNeed = shouldTranslateTextForTarget(description, target);
       if (!hasAnyNeed) {
         task.translations[target] = {
-          title: title,
+          title: String(task.title || "").trim(),
           description: description,
-          subcategory: subcategory,
+          subcategory: String(task.subcategory || "").trim(),
           _sig: sig,
         };
         changedWithoutApi = true;
@@ -1497,9 +1502,7 @@
       jobs.push({
         task: task,
         sig: sig,
-        title: title,
         description: description,
-        subcategory: subcategory,
       });
     });
 
@@ -1513,17 +1516,15 @@
     const uniqueTexts = [];
     const uniqueMap = new Map();
     jobs.forEach(function (job) {
-      ["title", "description", "subcategory"].forEach(function (field) {
-        const value = String(job[field] || "").trim();
-        if (!value || !shouldTranslateTextForTarget(value, target)) {
-          return;
-        }
-        if (uniqueMap.has(value)) {
-          return;
-        }
-        uniqueMap.set(value, uniqueTexts.length);
-        uniqueTexts.push(value);
-      });
+      const value = String(job.description || "").trim();
+      if (!value || !shouldTranslateTextForTarget(value, target)) {
+        return;
+      }
+      if (uniqueMap.has(value)) {
+        return;
+      }
+      uniqueMap.set(value, uniqueTexts.length);
+      uniqueTexts.push(value);
     });
 
     const translatedMap = new Map();
@@ -1551,26 +1552,17 @@
     }
 
     jobs.forEach(function (job) {
-      const title =
-        job.title && shouldTranslateTextForTarget(job.title, target)
-          ? translatedMap.get(job.title) || job.title
-          : job.title;
       const description =
         job.description && shouldTranslateTextForTarget(job.description, target)
           ? translatedMap.get(job.description) || job.description
           : job.description;
-      const subcategory =
-        job.subcategory && shouldTranslateTextForTarget(job.subcategory, target)
-          ? translatedMap.get(job.subcategory) || job.subcategory
-          : job.subcategory;
 
       job.task.translations[target] = {
-        title: String(title || "").trim(),
+        title: String(job.task.title || "").trim(),
         description: String(description || "").trim(),
-        subcategory: String(subcategory || "").trim(),
+        subcategory: String(job.task.subcategory || "").trim(),
         _sig: job.sig,
       };
-      touchTask(job.task);
     });
 
     saveTasks();
@@ -1802,7 +1794,6 @@
     updateSubcategoryOptions();
     updateFormLockState();
     renderTodayOverviewBar();
-    renderAll();
     await ensureTaskTranslationsForLanguage(nextLang);
     renderAll();
   }
@@ -3814,16 +3805,18 @@
     saveDeletedTaskIds();
     saveTodayOverview();
     renderTodayOverviewBar();
-    renderAll();
-    ensureTaskTranslationsForLanguage(state.uiLanguage)
-      .then(function (changed) {
-        if (changed) {
+    const activeLang = normalizeUiLanguage(state.uiLanguage);
+    if (activeLang === "en") {
+      ensureTaskTranslationsForLanguage(activeLang)
+        .catch(function (error) {
+          console.error("applyImportedBackup translation error", error);
+        })
+        .finally(function () {
           renderAll();
-        }
-      })
-      .catch(function (error) {
-        console.error("applyImportedBackup translation error", error);
-      });
+        });
+    } else {
+      renderAll();
+    }
     if (!silent) {
       showToast("已讀取資料，共 " + state.tasks.length + " 筆。");
     }
@@ -4742,12 +4735,62 @@
         merged.set(normalized.id, normalized);
         return;
       }
-      if (getTaskRevisionMs(normalized) >= getTaskRevisionMs(existing)) {
-        merged.set(normalized.id, normalized);
-      }
+      const useIncoming = getTaskRevisionMs(normalized) >= getTaskRevisionMs(existing);
+      const winner = useIncoming ? normalized : existing;
+      const loser = useIncoming ? existing : normalized;
+      mergeTaskTranslationCache(winner, loser);
+      merged.set(normalized.id, winner);
     });
 
     return Array.from(merged.values()).sort(sortByDueTime);
+  }
+
+  function mergeTaskTranslationCache(targetTask, sourceTask) {
+    if (!targetTask || !sourceTask) {
+      return;
+    }
+    if (!targetTask.translations || typeof targetTask.translations !== "object" || Array.isArray(targetTask.translations)) {
+      targetTask.translations = {};
+    }
+    const sourceTranslations =
+      sourceTask.translations && typeof sourceTask.translations === "object" && !Array.isArray(sourceTask.translations)
+        ? sourceTask.translations
+        : {};
+    const targetSig = getTaskTranslationSignature(targetTask);
+    const targetDesc = String(targetTask.description || "").trim();
+    const sourceDesc = String(sourceTask.description || "").trim();
+    if (targetDesc !== sourceDesc) {
+      return;
+    }
+
+    ["en", "zh"].forEach(function (lang) {
+      const current = targetTask.translations[lang];
+      if (
+        current &&
+        typeof current === "object" &&
+        String(current._sig || "") === targetSig &&
+        isTaskTranslationUsable(targetTask, current, lang)
+      ) {
+        return;
+      }
+      const candidate = sourceTranslations[lang];
+      if (!candidate || typeof candidate !== "object") {
+        return;
+      }
+      const candidateDesc = String(candidate.description || "").trim();
+      if (!candidateDesc) {
+        return;
+      }
+      if (shouldTranslateTextForTarget(targetDesc, lang) && candidateDesc === targetDesc) {
+        return;
+      }
+      targetTask.translations[lang] = {
+        title: String(targetTask.title || "").trim(),
+        description: candidateDesc,
+        subcategory: String(targetTask.subcategory || "").trim(),
+        _sig: targetSig,
+      };
+    });
   }
 
   function mergeTodayOverview(baseOverview, incomingOverview, options) {
