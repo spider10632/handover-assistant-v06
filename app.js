@@ -1295,6 +1295,37 @@
     return translated || original;
   }
 
+  function isTaskTranslationUsable(task, translationEntry, targetLang) {
+    if (!task || typeof task !== "object") {
+      return false;
+    }
+    if (!translationEntry || typeof translationEntry !== "object" || Array.isArray(translationEntry)) {
+      return false;
+    }
+    const target = normalizeUiLanguage(targetLang);
+    const fields = ["title", "description", "subcategory"];
+    for (let i = 0; i < fields.length; i += 1) {
+      const field = fields[i];
+      const source = String(task[field] || "").trim();
+      if (!source) {
+        continue;
+      }
+      if (!shouldTranslateTextForTarget(source, target)) {
+        continue;
+      }
+      const translated = String(translationEntry[field] || "").trim();
+      if (!translated) {
+        return false;
+      }
+      // If translated content is exactly same as source for a field that should be translated,
+      // treat it as stale/failed cache and retry translation.
+      if (translated === source) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   function hasTranslatedDescriptionForCurrentLanguage(task) {
     if (!task || typeof task !== "object") {
       return false;
@@ -1438,7 +1469,12 @@
         task.translations = {};
       }
       const existing = task.translations[target];
-      if (existing && typeof existing === "object" && String(existing._sig || "") === sig) {
+      if (
+        existing &&
+        typeof existing === "object" &&
+        String(existing._sig || "") === sig &&
+        isTaskTranslationUsable(task, existing, target)
+      ) {
         return;
       }
       const title = String(task.title || "").trim();
