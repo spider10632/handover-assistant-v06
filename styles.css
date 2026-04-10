@@ -16,16 +16,16 @@
   --content-card-bg: #ffffff;
   --content-card-bg-soft: #fdfcf9;
   --content-card-border: rgba(209, 197, 180, 0.2);
-  --content-card-hover: rgba(197, 160, 89, 0.09);
+  --content-card-hover: #eae8e3;
   --content-title: #1b1c19;
   --content-meta: #4f524d;
   --content-subtle: #605c53;
-  --status-pending-bg: linear-gradient(120deg, #ead7b3, #ddc18e);
-  --status-pending-text: #4e3614;
-  --status-done-bg: linear-gradient(120deg, #dde9e2, #ceddd5);
-  --status-done-text: #1f3f35;
-  --status-overdue-bg: linear-gradient(120deg, #f4e3df, #ecd2cc);
-  --status-overdue-text: #6e3333;
+  --status-pending-bg: #c5a059;
+  --status-pending-text: #ffffff;
+  --status-done-bg: #f5f3ee;
+  --status-done-text: #775a19;
+  --status-overdue-bg: #c5a059;
+  --status-overdue-text: #ffffff;
   --table-header-bg: rgba(197, 160, 89, 0.12);
   --radius-lg: 4px;
   --radius-md: 4px;
@@ -327,9 +327,13 @@ h2 {
 }
 
 .btn-primary {
-  color: #1b1c19;
-  background: linear-gradient(120deg, #d7bb86, #c5a059);
+  color: #ffffff;
+  background: #c5a059;
   border-color: rgba(153, 121, 63, 0.45);
+}
+
+.btn-primary:hover {
+  background: #b38f48;
 }
 
 .btn-secondary {
@@ -392,8 +396,8 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: rgba(197, 160, 89, 0.78);
-  box-shadow: inset 0 -2px 0 rgba(197, 160, 89, 0.92), 0 0 0 1px rgba(197, 160, 89, 0.22);
+  border-color: #c5a059;
+  box-shadow: inset 0 -2px 0 #c5a059, 0 0 0 1px rgba(197, 160, 89, 0.22);
 }
 
 input:disabled,
@@ -463,9 +467,17 @@ textarea {
 }
 
 .all-day-btn.active {
-  color: #1b140b;
-  background: linear-gradient(120deg, #d2ad72, #b48244);
-  border-color: rgba(171, 126, 64, 0.56);
+  color: #ffffff;
+  background: #c5a059;
+  border-color: #b38f48;
+}
+
+.all-day-btn:hover {
+  background: #eae8e3;
+}
+
+.all-day-btn.active:hover {
+  background: #b38f48;
 }
 
 .pin-option {
@@ -617,7 +629,7 @@ textarea {
 
 .today-item:hover {
   box-shadow: var(--shadow-hover);
-  background: linear-gradient(132deg, #fffefc, #faf8f3);
+  background: #eae8e3;
 }
 
 .today-item.pinned-zone-item {
@@ -627,9 +639,34 @@ textarea {
 }
 
 .today-item.overdue {
-  border-color: rgba(194, 128, 128, 0.42);
-  border-left-color: #b75b5b;
-  background: linear-gradient(132deg, #fdf0ef, #f6dfdc);
+  border-color: rgba(197, 160, 89, 0.68);
+  border-left-color: #9f7c40;
+  background: #c5a059;
+}
+
+.today-item.overdue .today-title,
+.today-item.overdue .today-meta,
+.today-item.overdue .today-time,
+.today-item.overdue .today-countdown,
+.today-item.overdue .status-badge {
+  color: #ffffff;
+}
+
+.today-item.overdue .today-title,
+.today-item.overdue .today-time,
+.today-item.overdue .status-badge {
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.today-item.overdue .today-desc {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+}
+
+.today-item.overdue .today-desc-label {
+  color: #ffffff;
 }
 
 .today-item.done {
@@ -716,17 +753,17 @@ textarea {
   padding: 4px 9px;
   font-size: 0.76rem;
   font-weight: 700;
+  border: 1px solid #d1c5b4;
 }
 
 .today-pill {
-  background: linear-gradient(120deg, #ebd5ae, #d9bb81);
-  color: #54330d;
+  background: rgba(197, 160, 89, 0.1);
+  color: #775a19;
 }
 
 .today-category-pill {
-  background: linear-gradient(120deg, #f3ebda, #e8dcc4);
-  border: 1px solid rgba(197, 160, 89, 0.24);
-  color: #4e3f24;
+  background: #f5f3ee;
+  color: #775a19;
 }
 
 .status-badge {
@@ -839,7 +876,7 @@ th {
 }
 
 tbody tr:hover {
-  background: var(--content-card-hover);
+  background: #eae8e3;
 }
 
 td {
@@ -914,9 +951,21 @@ td {
 }
 
 .action-original.active {
-  color: #163248;
-  background: linear-gradient(120deg, #dde9f4, #cfddec);
-  border-color: rgba(111, 137, 159, 0.42);
+  color: #ffffff;
+  background: #c5a059;
+  border-color: #b38f48;
+}
+
+.action-original:hover {
+  background: #eae8e3;
+  border-color: #d1c5b4;
+  color: #4a453a;
+}
+
+.action-original.active:hover {
+  background: #b38f48;
+  border-color: #a68441;
+  color: #ffffff;
 }
 
 .action-pin {
@@ -1046,8 +1095,9 @@ td {
   padding: 3px 9px;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #4f320d;
-  background: linear-gradient(120deg, #e8d1a9, #d4b276);
+  color: #775a19;
+  background: #f5f3ee;
+  border: 1px solid #d1c5b4;
 }
 
 .upcoming-time {
