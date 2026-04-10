@@ -1465,7 +1465,7 @@ body.theme-mono .upcoming-empty {
     min-width: 0;
   }
 
-  .today-item.pinned-zone-item {
+  .today-item.pinned-zone-item:not(.overdue) {
     border-color: var(--content-card-border);
     border-left-color: #b38b4f;
     background: linear-gradient(132deg, var(--content-card-bg), var(--content-card-bg-soft));
