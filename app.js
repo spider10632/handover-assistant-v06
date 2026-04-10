@@ -1304,20 +1304,33 @@
     if (!url) {
       throw new Error("translate url missing");
     }
-    const response = await fetchWithTimeout(
-      url,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          targetLang: target,
-          texts: sourceList,
-        }),
-      },
-      CLOUD_REQUEST_TIMEOUT_MS + 6000,
-    );
-    if (!response.ok) {
-      throw new Error("translate failed: " + response.status);
+    let response = null;
+    let lastStatus = 0;
+    const payload = JSON.stringify({
+      targetLang: target,
+      texts: sourceList,
+    });
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      response = await fetchWithTimeout(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        },
+        CLOUD_REQUEST_TIMEOUT_MS + 6000,
+      );
+      if (response.ok) {
+        break;
+      }
+      lastStatus = Number(response.status || 0);
+      if (!isRetryableTranslateStatus(lastStatus) || attempt >= 3) {
+        break;
+      }
+      await waitMs(300 * attempt * attempt);
+    }
+    if (!response || !response.ok) {
+      throw new Error("translate failed: " + String(lastStatus || (response && response.status) || 0));
     }
     const parsed = await response.json();
     if (!parsed || !Array.isArray(parsed.translations)) {
@@ -1330,6 +1343,18 @@
       throw new Error("translate response length mismatch");
     }
     return result;
+  }
+
+  function isRetryableTranslateStatus(status) {
+    const code = Number(status || 0);
+    return code === 429 || code === 500 || code === 502 || code === 503 || code === 504;
+  }
+
+  function waitMs(ms) {
+    const delay = Number(ms) > 0 ? Number(ms) : 0;
+    return new Promise(function (resolve) {
+      setTimeout(resolve, delay);
+    });
   }
 
   async function ensureTaskTranslationsForLanguage(targetLang) {

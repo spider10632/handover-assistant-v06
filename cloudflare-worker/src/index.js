@@ -4,6 +4,8 @@ const JSON_BASE_HEADERS = {
 };
 const MAX_TRANSLATE_ITEMS = 60;
 const MAX_TRANSLATE_TEXT_LENGTH = 2000;
+const TRANSLATE_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const TRANSLATE_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
 
 export default {
   async fetch(request, env) {
@@ -176,18 +178,27 @@ async function handleTranslate(request, env, serverId, cors) {
   }
 
   let translated;
+  let provider = "gemini";
   try {
     translated = await translateTextsWithGemini(env, targetLang, normalizedTexts);
   } catch (error) {
-    return jsonResponse(
-      {
-        ok: false,
-        error: "TRANSLATION_FAILED",
-        message: String(error && error.message ? error.message : "translate failed"),
-      },
-      502,
-      cors,
-    );
+    try {
+      translated = await translateTextsWithGooglePublic(targetLang, normalizedTexts);
+      provider = "google-public-fallback";
+    } catch (fallbackError) {
+      return jsonResponse(
+        {
+          ok: false,
+          error: "TRANSLATION_FAILED",
+          message: String(error && error.message ? error.message : "translate failed"),
+          fallbackMessage: String(
+            fallbackError && fallbackError.message ? fallbackError.message : "fallback translate failed",
+          ),
+        },
+        502,
+        cors,
+      );
+    }
   }
 
   return jsonResponse(
@@ -195,6 +206,7 @@ async function handleTranslate(request, env, serverId, cors) {
       ok: true,
       serverId,
       targetLang,
+      provider,
       translations: translated,
     },
     200,
@@ -235,17 +247,12 @@ function normalizeTargetLang(value) {
 }
 
 async function translateTextsWithGemini(env, targetLang, texts) {
-  const model = String(env.GEMINI_MODEL || "gemini-2.5-flash-lite").trim() || "gemini-2.5-flash-lite";
   const apiKey = String(env.GEMINI_API_KEY || "").trim();
   if (!apiKey) {
     throw new Error("missing api key");
   }
-  const endpoint =
-    "https://generativelanguage.googleapis.com/v1beta/models/" +
-    encodeURIComponent(model) +
-    ":generateContent?key=" +
-    encodeURIComponent(apiKey);
   const targetLabel = targetLang === "en" ? "English" : "Traditional Chinese (Taiwan)";
+  const models = buildTranslateModelList(env);
 
   const requestPayload = {
     systemInstruction: {
@@ -279,6 +286,49 @@ async function translateTextsWithGemini(env, targetLang, texts) {
     },
   };
 
+  let lastError = null;
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const translations = await requestGeminiTranslations(apiKey, model, requestPayload, texts.length);
+        return translations.map((item, index) => {
+          const value = String(item == null ? "" : item).trim();
+          return value || String(texts[index] || "");
+        });
+      } catch (error) {
+        lastError = error;
+        const status = Number(error && error.status ? error.status : 0);
+        const message = String(error && error.message ? error.message : "");
+        if (status === 400 && /API_KEY_INVALID|INVALID_ARGUMENT/i.test(message)) {
+          throw error;
+        }
+        if (attempt >= 3 || !TRANSLATE_RETRY_STATUSES.has(status)) {
+          break;
+        }
+        const backoffMs = 250 * attempt * attempt;
+        await sleep(backoffMs);
+      }
+    }
+  }
+  throw lastError || new Error("translation failed");
+}
+
+function buildTranslateModelList(env) {
+  const preferred = String(env.GEMINI_MODEL || "gemini-2.5-flash-lite")
+    .trim()
+    .toLowerCase();
+  const list = [preferred, ...TRANSLATE_MODEL_FALLBACKS]
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean);
+  return Array.from(new Set(list));
+}
+
+async function requestGeminiTranslations(apiKey, model, requestPayload, expectedLength) {
+  const endpoint =
+    "https://generativelanguage.googleapis.com/v1beta/models/" +
+    encodeURIComponent(model) +
+    ":generateContent?key=" +
+    encodeURIComponent(apiKey);
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -289,7 +339,9 @@ async function translateTextsWithGemini(env, targetLang, texts) {
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error("gemini http " + response.status + " " + detail);
+    const error = new Error("gemini http " + response.status + " " + detail);
+    error.status = response.status;
+    throw error;
   }
 
   const data = await response.json();
@@ -298,20 +350,98 @@ async function translateTextsWithGemini(env, targetLang, texts) {
     throw new Error("empty gemini response");
   }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw new Error("invalid gemini json");
-  }
+  const parsed = parseJsonLoose(text);
   const translations = Array.isArray(parsed && parsed.translations) ? parsed.translations : [];
-  if (translations.length !== texts.length) {
+  if (translations.length !== expectedLength) {
     throw new Error("translation length mismatch");
   }
-  return translations.map((item, index) => {
-    const value = String(item == null ? "" : item).trim();
-    return value || String(texts[index] || "");
-  });
+  return translations;
+}
+
+function parseJsonLoose(raw) {
+  const text = String(raw || "").trim();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    // continue
+  }
+
+  const noFence = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/, "").trim();
+  if (noFence && noFence !== text) {
+    try {
+      return JSON.parse(noFence);
+    } catch (error) {
+      // continue
+    }
+  }
+
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    const block = text.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(block);
+    } catch (error) {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function translateTextsWithGooglePublic(targetLang, texts) {
+  const tl = normalizeUiTargetLang(targetLang);
+  const results = [];
+  for (const source of texts) {
+    const text = String(source || "");
+    if (!text.trim()) {
+      results.push(text);
+      continue;
+    }
+    const url =
+      "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" +
+      encodeURIComponent(tl) +
+      "&dt=t&q=" +
+      encodeURIComponent(text);
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+      },
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error("google public translate http " + response.status + " " + detail);
+    }
+    const payload = await response.json();
+    const translated = extractGooglePublicTranslatedText(payload);
+    results.push(translated || text);
+  }
+  return results;
+}
+
+function normalizeUiTargetLang(targetLang) {
+  const normalized = normalizeTargetLang(targetLang);
+  if (normalized === "zh") {
+    return "zh-TW";
+  }
+  return "en";
+}
+
+function extractGooglePublicTranslatedText(payload) {
+  const root = Array.isArray(payload) ? payload : null;
+  if (!root || !Array.isArray(root[0])) {
+    return "";
+  }
+  const sentenceParts = root[0];
+  return sentenceParts
+    .map((entry) => {
+      return Array.isArray(entry) ? String(entry[0] || "") : "";
+    })
+    .join("")
+    .trim();
 }
 
 function extractGeminiText(data) {
@@ -324,6 +454,11 @@ function extractGeminiText(data) {
     })
     .join("")
     .trim();
+}
+
+function sleep(ms) {
+  const wait = Number(ms) > 0 ? Number(ms) : 0;
+  return new Promise((resolve) => setTimeout(resolve, wait));
 }
 
 function buildCorsHeaders() {
