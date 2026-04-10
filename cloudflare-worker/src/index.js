@@ -236,11 +236,15 @@ function normalizeTargetLang(value) {
 
 async function translateTextsWithGemini(env, targetLang, texts) {
   const model = String(env.GEMINI_MODEL || "gemini-2.5-flash-lite").trim() || "gemini-2.5-flash-lite";
+  const apiKey = String(env.GEMINI_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("missing api key");
+  }
   const endpoint =
     "https://generativelanguage.googleapis.com/v1beta/models/" +
     encodeURIComponent(model) +
     ":generateContent?key=" +
-    encodeURIComponent(String(env.GEMINI_API_KEY));
+    encodeURIComponent(apiKey);
   const targetLabel = targetLang === "en" ? "English" : "Traditional Chinese (Taiwan)";
 
   const requestPayload = {
