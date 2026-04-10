@@ -5,8 +5,8 @@ workers_dev = true
 
 [vars]
 ALLOWED_USERS = "caesarmetro,test"
-GEMINI_MODEL = "gemini-2.5-flash-lite"
-TRANSLATE_PROVIDER_ORDER = "azure,deepl,google-cloud,gemini,google-public"
+GEMINI_MODEL = "gemini-2.5-flash"
+TRANSLATE_PROVIDER_ORDER = "azure,deepl,google-cloud,google-public,gemini"
 
 [[d1_databases]]
 binding = "DB"

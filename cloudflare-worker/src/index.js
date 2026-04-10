@@ -6,7 +6,7 @@ const MAX_TRANSLATE_ITEMS = 60;
 const MAX_TRANSLATE_TEXT_LENGTH = 2000;
 const TRANSLATE_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const TRANSLATE_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
-const TRANSLATE_PROVIDER_DEFAULT_ORDER = ["azure", "deepl", "google-cloud", "gemini", "google-public"];
+const TRANSLATE_PROVIDER_DEFAULT_ORDER = ["azure", "deepl", "google-cloud", "google-public", "gemini"];
 
 export default {
   async fetch(request, env) {
@@ -320,7 +320,7 @@ async function translateTextsWithGemini(env, targetLang, texts) {
       parts: [
         {
           text:
-            "You are a professional concierge handover translator. Keep original facts exactly, including names, room numbers, dates, and amounts. Return JSON only.",
+            "You are a professional concierge handover translator. Translate fully and faithfully. Never summarize, shorten, omit, reorder, or rewrite facts. Keep all names, room numbers, dates, times, amounts, symbols, separators, and line breaks. Return JSON only.",
         },
       ],
     },
@@ -330,11 +330,18 @@ async function translateTextsWithGemini(env, targetLang, texts) {
         parts: [
           {
             text: JSON.stringify({
-              task: "Translate each text to the target language.",
+              task: "Translate each text to the target language with full fidelity.",
               target_language: targetLabel,
               output_format: {
                 translations: ["same length as input texts array"],
               },
+              strict_rules: [
+                "Output array length must equal input length.",
+                "Each output item must correspond to the same input index.",
+                "Do not summarize or shorten.",
+                "Preserve all factual details and order.",
+                "If unsure about a token, keep it as-is.",
+              ],
               texts: texts,
             }),
           },
