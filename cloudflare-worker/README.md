@@ -35,6 +35,16 @@ npm run deploy
 
 `https://handover-cloud-api.<your-subdomain>.workers.dev`
 
+## 3.1) 啟用 AI 翻譯（Gemini）
+
+若要使用中英文介面切換時的即時翻譯，請先設定 Gemini API Key（只放在 Worker，不放前端）：
+
+```bash
+npx wrangler secret put GEMINI_API_KEY
+```
+
+可在 `wrangler.toml` 的 `GEMINI_MODEL` 指定模型（預設 `gemini-2.5-flash-lite`）。
+
 ## 4) 前端設定 API
 
 在 `index.html` 的 `app.js` 前加入（或修改）以下設定：
@@ -62,5 +72,6 @@ npm run deploy
 - `GET /health`
 - `GET /v1/state/:serverId`
 - `PUT /v1/state/:serverId`
+- `POST /v1/translate/:serverId`
 
 `wrangler.toml` 的 `ALLOWED_USERS` 可設定允許的 serverId（逗號分隔）。

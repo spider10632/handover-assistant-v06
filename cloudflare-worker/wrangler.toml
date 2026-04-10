@@ -5,6 +5,7 @@ workers_dev = true
 
 [vars]
 ALLOWED_USERS = "caesarmetro,test"
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 [[d1_databases]]
 binding = "DB"

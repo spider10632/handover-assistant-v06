@@ -6,6 +6,7 @@
 - 日期查詢與狀態篩選
 - 一鍵輸出 Word（Arr / Dep / Occ + Daily Briefing）
 - 雲端同步（Cloudflare Workers + D1）
+- 中英文介面切換（切換時可用 AI 翻譯交接內容）
 
 ## 本地開啟
 
@@ -23,6 +24,14 @@
 ```
 
 3. 重新整理網頁，即可讓同一個使用者（目前 `caesarmetro`）共用同一份雲端資料。
+
+## AI 翻譯設定（選用）
+
+若要啟用中英文切換時的 AI 翻譯，請在 `cloudflare-worker` 目錄設定：
+
+```bash
+npx wrangler secret put GEMINI_API_KEY
+```
 
 ## kvdb 舊資料搬移
 

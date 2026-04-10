@@ -188,6 +188,51 @@ body.theme-mono::before {
   gap: 18px;
 }
 
+.language-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(176, 142, 91, 0.42);
+  background: rgba(255, 249, 239, 0.9);
+  box-shadow: 0 6px 14px rgba(23, 18, 11, 0.1);
+}
+
+.language-bar label {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #675538;
+}
+
+.language-bar select {
+  min-width: 110px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(176, 142, 91, 0.42);
+  background: #fffaf1;
+  color: #24332d;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+body.theme-mono .language-bar {
+  border-color: rgba(122, 122, 122, 0.45);
+  background: rgba(242, 242, 242, 0.92);
+}
+
+body.theme-mono .language-bar label {
+  color: #444;
+}
+
+body.theme-mono .language-bar select {
+  border-color: rgba(122, 122, 122, 0.45);
+  background: #f8f8f8;
+  color: #1f1f1f;
+}
+
 .top-panels,
 .bottom-panels {
   display: grid;
@@ -1239,6 +1284,17 @@ body.theme-mono .upcoming-empty {
   .app {
     padding: 14px 10px calc(250px + env(safe-area-inset-bottom));
     gap: 12px;
+  }
+
+  .language-bar {
+    justify-self: stretch;
+    width: 100%;
+    justify-content: space-between;
+    padding: 9px 12px;
+  }
+
+  .language-bar select {
+    min-width: 124px;
   }
 
   .panel {

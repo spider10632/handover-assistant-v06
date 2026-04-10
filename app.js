@@ -31,6 +31,9 @@
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
   const BACKUP_TYPE = "handover-backup";
   const BACKUP_VERSION = "0.95";
+  const UI_LANGUAGE_STORAGE_KEY = "handover_ui_language_v1";
+  const DEFAULT_UI_LANGUAGE = "zh";
+  const TRANSLATE_BATCH_SIZE = 30;
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
@@ -46,6 +49,235 @@
     行政: ["叫貨領貨", "人事相關", "其他"],
     遺留物: ["待寄", "待取"],
   };
+  const CATEGORY_LABEL_MAP = Object.freeze({
+    en: Object.freeze({
+      廣場: "Plaza",
+      包裹代收: "Parcel Desk",
+      車輛安排: "Transport",
+      大廳: "Lobby",
+      會議室: "Meeting Room",
+      團桌: "Banquet Table",
+      客房: "Guest Room",
+      預訂: "Reservation",
+      餐飲部: "F&B",
+      待回覆信件: "Pending Reply",
+      郵寄: "Mail",
+      行政: "Administration",
+      公告: "Notice",
+      遺留物: "Lost & Found",
+    }),
+  });
+  const SUBCATEGORY_LABEL_MAP = Object.freeze({
+    en: Object.freeze({
+      保留車位: "Reserved Parking",
+      其他: "Other",
+      團體: "Group",
+      散客: "Individual",
+      禮賓車: "Limousine",
+      計程車: "Taxi",
+      行李寄放: "Luggage Storage",
+      下行李: "Luggage Delivery",
+      房務相關事項: "Housekeeping",
+      送房: "In-room Delivery",
+      佈置: "Decoration",
+      餐廳: "Restaurant",
+      車票: "Train Ticket",
+      叫貨領貨: "Supply Pickup",
+      人事相關: "HR Related",
+      待寄: "To Ship",
+      待取: "To Pick Up",
+    }),
+  });
+  const UI_TEXT = Object.freeze({
+    zh: Object.freeze({
+      appTitle: "工作交接助手",
+      passwordSubtitle: "請輸入使用者後進入系統（不同使用者為獨立資料庫）",
+      passwordLabel: "使用者（英數、-、_）",
+      passwordSubmit: "進入系統",
+      languageLabel: "介面",
+      todaySectionTitle: "當日事項",
+      todayDateLabel: "當日日期",
+      todayCheckinLabel: "預進",
+      todayCheckoutLabel: "預退",
+      todayOccLabel: "住房率",
+      save: "儲存",
+      todayPinnedTitle: "置頂區",
+      todayFilterLabel: "主分類",
+      taskFormTitle: "新增交接待辦",
+      taskCategoryLabel: "主分類",
+      taskSubcategoryLabel: "子分類",
+      taskTitleLabel: "事項名稱",
+      taskTimeLabel: "時間（可跨日：起日/起時 至 迄日/迄時，可留空）",
+      timeRangeSep: "至",
+      allDay: "全日",
+      taskOwnerLabel: "填寫人",
+      taskPinLabel: "置頂顯示",
+      taskPinHelp: "一直顯示在網頁上",
+      taskDescLabel: "交接說明",
+      addTask: "新增待辦",
+      clear: "清空",
+      cancelEdit: "取消修改",
+      queryPanelTitle: "日期查詢",
+      resultPanelTitle: "查詢結果",
+      taskListFilterLabel: "篩選",
+      exportDateLabel: "匯出日期",
+      exportStatusLabel: "匯出狀態",
+      exportWord: "一鍵生成 Word",
+      exportExcel: "一鍵生成 Excel",
+      upcomingTitle: "下一件待辦提醒",
+      close: "關閉",
+      notificationToggleLabel: "通知開啟",
+      requestNotification: "授權通知",
+      mobileUpcomingLabel: "下一件待辦",
+      collapse: "收合",
+      expand: "展開",
+      allCategories: "全部主分類",
+      allStatus: "全部狀態",
+      pending: "未完成",
+      done: "已完成",
+      pinned: "置頂中",
+      all: "全部",
+      keywordPlaceholder: "關鍵字查詢（事項/說明/填寫人）",
+      taskTitlePlaceholder: "例：房號、客人姓名、團體名稱等",
+      taskOwnerPlaceholder: "例：王小明",
+      taskDescriptionPlaceholder: "補充細節、檔案位置、提醒事項",
+      search: "查詢",
+      clearSearch: "清除",
+      todayNoPinned: "目前沒有置頂事項。",
+      todayNoSchedule: "今日沒有排程事項。",
+      todayNoNormal: "今日一般事項為 0 筆。",
+      tableHeaders: ["狀態", "置頂", "主分類", "子分類", "事項", "填寫人", "完成人", "時間", "交接說明", "操作"],
+      statusPending: "待處理",
+      statusDone: "已完成",
+      actionComplete: "完成",
+      actionUndoComplete: "取消完成",
+      actionEdit: "修改",
+      actionCopy: "一鍵複製",
+      actionCancel: "取消",
+      actionPin: "置頂",
+      actionUnpin: "取消置頂",
+      actionDelete: "刪除",
+      owner: "填寫人",
+      completedBy: "完成人",
+      countdown: "倒數",
+      content: "內容",
+      time: "時間",
+      uncategorized: "未分類",
+      notFilled: "未填寫",
+      noData: "（無）",
+      categoryTipSelectCategory: "請先選主分類，再填寫其餘欄位。",
+      categoryTipNeedSub: "此主分類需要子分類，請先選擇子分類。",
+      categoryTipCurrent: "目前分類：{category}",
+      categoryTipCurrentSub: "目前分類：{category} / {subcategory}",
+      subcategoryChooseCategory: "請先選主分類",
+      subcategoryNone: "此主分類無子分類",
+      subcategoryChoose: "請選擇子分類",
+      queryAllText: "目前顯示全部待辦，共 {count} 筆。",
+      queryConditionText: "目前顯示「{condition}」，共 {count} 筆。",
+      todaySummaryZero: "今日共 0 筆事項（{category}）。",
+      todaySummary: "今日共 {total} 筆，待處理 {pending} 筆，已完成 {done} 筆（{category}）。",
+      taskTableEmpty: "目前沒有符合條件的待辦事項。",
+      upcomingSummaryEmpty: "目前沒有 1 小時內待辦。",
+      upcomingListEmpty: "30 分鐘與 1 小時提醒區間目前無待辦。",
+      timeWindowDue: "已到時間",
+      timeWindow30: "30 分鐘內",
+      timeWindow60: "1 小時內",
+    }),
+    en: Object.freeze({
+      appTitle: "Handover Assistant",
+      passwordSubtitle: "Enter a user account to access (each user has an isolated cloud database).",
+      passwordLabel: "User (letters, numbers, -, _)",
+      passwordSubmit: "Sign In",
+      languageLabel: "Language",
+      todaySectionTitle: "Today Board",
+      todayDateLabel: "Date",
+      todayCheckinLabel: "Arr",
+      todayCheckoutLabel: "Dep",
+      todayOccLabel: "Occ",
+      save: "Save",
+      todayPinnedTitle: "Pinned",
+      todayFilterLabel: "Category",
+      taskFormTitle: "Add Handover Task",
+      taskCategoryLabel: "Category",
+      taskSubcategoryLabel: "Subcategory",
+      taskTitleLabel: "Task Title",
+      taskTimeLabel: "Time (cross-day allowed: start date/time to end date/time, optional)",
+      timeRangeSep: "to",
+      allDay: "All Day",
+      taskOwnerLabel: "Owner",
+      taskPinLabel: "Pin Display",
+      taskPinHelp: "Keep visible on page",
+      taskDescLabel: "Handover Notes",
+      addTask: "Add Task",
+      clear: "Clear",
+      cancelEdit: "Cancel Edit",
+      queryPanelTitle: "Date Query",
+      resultPanelTitle: "Query Result",
+      taskListFilterLabel: "Filter",
+      exportDateLabel: "Export Date",
+      exportStatusLabel: "Export Status",
+      exportWord: "Export Word",
+      exportExcel: "Export Excel",
+      upcomingTitle: "Upcoming Reminder",
+      close: "Close",
+      notificationToggleLabel: "Notifications On",
+      requestNotification: "Allow Notifications",
+      mobileUpcomingLabel: "Upcoming",
+      collapse: "Collapse",
+      expand: "Expand",
+      allCategories: "All Categories",
+      allStatus: "All Status",
+      pending: "Pending",
+      done: "Done",
+      pinned: "Pinned",
+      all: "All",
+      keywordPlaceholder: "Keyword (title/notes/owner)",
+      taskTitlePlaceholder: "e.g. Room no., guest name, group name",
+      taskOwnerPlaceholder: "e.g. Dennis",
+      taskDescriptionPlaceholder: "Details, file location, reminders",
+      search: "Search",
+      clearSearch: "Clear",
+      todayNoPinned: "No pinned items.",
+      todayNoSchedule: "No scheduled items for today.",
+      todayNoNormal: "No regular pending items today.",
+      tableHeaders: ["Status", "Pinned", "Category", "Subcategory", "Task", "Owner", "Done By", "Time", "Notes", "Actions"],
+      statusPending: "Pending",
+      statusDone: "Done",
+      actionComplete: "Done",
+      actionUndoComplete: "Undo",
+      actionEdit: "Edit",
+      actionCopy: "Copy",
+      actionCancel: "Cancel",
+      actionPin: "Pin",
+      actionUnpin: "Unpin",
+      actionDelete: "Delete",
+      owner: "Owner",
+      completedBy: "Done by",
+      countdown: "Countdown",
+      content: "Notes",
+      time: "Time",
+      uncategorized: "Uncategorized",
+      notFilled: "Not set",
+      noData: "(none)",
+      categoryTipSelectCategory: "Select a category first, then complete the form.",
+      categoryTipNeedSub: "This category requires a subcategory.",
+      categoryTipCurrent: "Current: {category}",
+      categoryTipCurrentSub: "Current: {category} / {subcategory}",
+      subcategoryChooseCategory: "Choose category first",
+      subcategoryNone: "No subcategory for this category",
+      subcategoryChoose: "Choose subcategory",
+      queryAllText: "Showing all tasks, total {count}.",
+      queryConditionText: "Showing \"{condition}\", total {count}.",
+      todaySummaryZero: "Total 0 item(s) today ({category}).",
+      todaySummary: "Total {total}, pending {pending}, done {done} ({category}).",
+      taskTableEmpty: "No tasks match current filters.",
+      upcomingSummaryEmpty: "No tasks within 1 hour.",
+      upcomingListEmpty: "No tasks in 30-min / 1-hour windows.",
+      timeWindowDue: "Due now",
+      timeWindow30: "Within 30 min",
+      timeWindow60: "Within 1 hour",
+    }),
+  });
   const EXPORT_FONT_EAST_ASIA = "DFKai-SB";
   const EXPORT_FONT_LATIN = "DFKai-SB";
   const EXPORT_DEFAULT_COLOR = "1F2A2A";
@@ -149,6 +381,7 @@
     currentServerId: null,
     currentServerConfig: null,
     currentProfile: null,
+    uiLanguage: DEFAULT_UI_LANGUAGE,
     appliedThemeVarKeys: [],
     cloudInitDone: false,
     cloudPushTimer: null,
@@ -167,6 +400,8 @@
 
   function bootstrap() {
     cacheElements();
+    state.uiLanguage = loadUiLanguage();
+    applyUiLanguageToStatic();
     initAccessGate();
   }
 
@@ -193,6 +428,7 @@
     syncMobileReminderUi();
     syncCollapsiblePanels();
     setupCategorySelectOptions();
+    syncUiLanguageSelect();
     if (els.queryCategory) {
       els.queryCategory.value = state.queryCategory;
     }
@@ -215,6 +451,15 @@
     startReminderLoop();
     startCountdownLoop();
     initCloudSync();
+    ensureTaskTranslationsForLanguage(state.uiLanguage)
+      .then(function (changed) {
+        if (changed) {
+          renderAll();
+        }
+      })
+      .catch(function (error) {
+        console.error("initial translation warmup error", error);
+      });
   }
 
   function initAccessGate() {
@@ -229,6 +474,221 @@
     setTimeout(function () {
       els.passwordInput.focus();
     }, 40);
+  }
+
+  function normalizeUiLanguage(value) {
+    const text = String(value || "").trim().toLowerCase();
+    return text === "en" ? "en" : "zh";
+  }
+
+  function isEnglishUi() {
+    return normalizeUiLanguage(state.uiLanguage) === "en";
+  }
+
+  function loadUiLanguage() {
+    try {
+      return normalizeUiLanguage(localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) || DEFAULT_UI_LANGUAGE);
+    } catch (error) {
+      return DEFAULT_UI_LANGUAGE;
+    }
+  }
+
+  function saveUiLanguage() {
+    try {
+      localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, normalizeUiLanguage(state.uiLanguage));
+    } catch (error) {
+      // ignore storage failure in private mode
+    }
+  }
+
+  function getUiText(key, params) {
+    const lang = normalizeUiLanguage(state.uiLanguage);
+    const table = UI_TEXT[lang] || UI_TEXT.zh;
+    const fallback = UI_TEXT.zh || {};
+    let value = table[key];
+    if (value === undefined) {
+      value = fallback[key];
+    }
+    if (typeof value !== "string") {
+      return value;
+    }
+    return value.replace(/\{(\w+)\}/g, function (_, token) {
+      return params && params[token] !== undefined ? String(params[token]) : "";
+    });
+  }
+
+  function getCategoryDisplayName(category) {
+    const key = String(category || "").trim();
+    if (!key) {
+      return "";
+    }
+    const lang = normalizeUiLanguage(state.uiLanguage);
+    const map = CATEGORY_LABEL_MAP[lang];
+    if (map && map[key]) {
+      return map[key];
+    }
+    return key;
+  }
+
+  function getSubcategoryDisplayName(subcategory) {
+    const key = String(subcategory || "").trim();
+    if (!key) {
+      return "";
+    }
+    const lang = normalizeUiLanguage(state.uiLanguage);
+    const map = SUBCATEGORY_LABEL_MAP[lang];
+    if (map && map[key]) {
+      return map[key];
+    }
+    return key;
+  }
+
+  function setElementText(id, value) {
+    const el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    el.textContent = String(value == null ? "" : value);
+  }
+
+  function setElementPlaceholder(id, value) {
+    const el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    el.setAttribute("placeholder", String(value == null ? "" : value));
+  }
+
+  function setSelectOptionText(selectEl, value, label) {
+    if (!selectEl) {
+      return;
+    }
+    const option = Array.prototype.find.call(selectEl.options || [], function (item) {
+      return String(item.value) === String(value);
+    });
+    if (option) {
+      option.textContent = String(label || "");
+    }
+  }
+
+  function syncUiLanguageSelect() {
+    if (!els.uiLanguageSelect) {
+      return;
+    }
+    els.uiLanguageSelect.value = normalizeUiLanguage(state.uiLanguage);
+  }
+
+  function applyUiLanguageToStatic() {
+    const lang = normalizeUiLanguage(state.uiLanguage);
+    document.documentElement.lang = lang === "en" ? "en" : "zh-Hant";
+    document.title = getUiText("appTitle");
+    setElementText("password-title", getUiText("appTitle"));
+    setElementText("password-subtitle", getUiText("passwordSubtitle"));
+    setElementText("password-label", getUiText("passwordLabel"));
+    setElementText("password-submit", getUiText("passwordSubmit"));
+    setElementText("ui-language-label", getUiText("languageLabel"));
+    setElementText("today-section-title", getUiText("todaySectionTitle"));
+    setElementText("today-checkin-label", getUiText("todayCheckinLabel"));
+    setElementText("today-checkout-label", getUiText("todayCheckoutLabel"));
+    setElementText("today-occ-label", getUiText("todayOccLabel"));
+    setElementText("today-overview-save-btn", getUiText("save"));
+    setElementText("today-pinned-title", getUiText("todayPinnedTitle"));
+    setElementText("today-filter-label", getUiText("todayFilterLabel"));
+    setElementText("task-form-title", getUiText("taskFormTitle"));
+    setElementText("task-category-label", getUiText("taskCategoryLabel"));
+    setElementText("task-subcategory-label", getUiText("taskSubcategoryLabel"));
+    setElementText("task-title-label", getUiText("taskTitleLabel"));
+    setElementText("task-time-label", getUiText("taskTimeLabel"));
+    setElementText("time-range-sep", getUiText("timeRangeSep"));
+    setElementText("all-day-btn", getUiText("allDay"));
+    setElementText("task-owner-label", getUiText("taskOwnerLabel"));
+    setElementText("task-pin-label", getUiText("taskPinLabel"));
+    setElementText("task-pin-help", getUiText("taskPinHelp"));
+    setElementText("task-desc-label", getUiText("taskDescLabel"));
+    setElementText("add-task-btn", state.editingTaskId ? getUiText("save") : getUiText("addTask"));
+    setElementText("clear-form-btn", getUiText("clear"));
+    setElementText("cancel-edit-btn", getUiText("cancelEdit"));
+    setElementText("query-panel-title", getUiText("queryPanelTitle"));
+    setElementText("result-panel-title", getUiText("resultPanelTitle"));
+    setElementText("task-list-filter-label", getUiText("taskListFilterLabel"));
+    setElementText("export-date-label", getUiText("exportDateLabel"));
+    setElementText("export-status-label", getUiText("exportStatusLabel"));
+    setElementText("export-word-btn", getUiText("exportWord"));
+    setElementText("export-excel-btn", getUiText("exportExcel"));
+    setElementText("upcoming-title", getUiText("upcomingTitle"));
+    setElementText("mobile-upcoming-close", getUiText("close"));
+    setElementText("notification-toggle-label", getUiText("notificationToggleLabel"));
+    setElementText("request-notification-btn", getUiText("requestNotification"));
+    setElementPlaceholder("task-title", getUiText("taskTitlePlaceholder"));
+    setElementPlaceholder("task-owner", getUiText("taskOwnerPlaceholder"));
+    setElementPlaceholder("task-description", getUiText("taskDescriptionPlaceholder"));
+    setElementPlaceholder("query-keyword", getUiText("keywordPlaceholder"));
+    setElementPlaceholder("today-occupancy-rate", lang === "en" ? "e.g. 99.47" : "例: 99.47");
+    setElementText("mobile-upcoming-toggle-text", getUiText("mobileUpcomingLabel"));
+    if (els.mobileAddBtn) {
+      els.mobileAddBtn.setAttribute(
+        "aria-label",
+        lang === "en" ? "Jump to add handover task" : "前往新增交接待辦",
+      );
+    }
+    if (els.mobileTopBtn) {
+      els.mobileTopBtn.setAttribute("aria-label", lang === "en" ? "Back to top" : "回到頂部");
+    }
+    if (els.tableHeaderCells && els.tableHeaderCells.length > 0) {
+      const labels = getUiText("tableHeaders");
+      if (Array.isArray(labels)) {
+        els.tableHeaderCells.forEach(function (cell, index) {
+          if (labels[index]) {
+            cell.textContent = labels[index];
+          }
+        });
+      }
+    }
+    if (els.queryStatus) {
+      setSelectOptionText(els.queryStatus, "all", getUiText("allStatus"));
+      setSelectOptionText(els.queryStatus, "pending", getUiText("pending"));
+      setSelectOptionText(els.queryStatus, "done", getUiText("done"));
+      els.queryStatus.setAttribute("aria-label", lang === "en" ? "Status filter" : "狀態篩選");
+    }
+    if (els.exportStatus) {
+      setSelectOptionText(els.exportStatus, "all", getUiText("allStatus"));
+      setSelectOptionText(els.exportStatus, "pending", getUiText("pending"));
+      setSelectOptionText(els.exportStatus, "done", getUiText("done"));
+    }
+    if (els.taskListFilter) {
+      setSelectOptionText(els.taskListFilter, "all", getUiText("all"));
+      setSelectOptionText(els.taskListFilter, "pending", getUiText("pending"));
+      setSelectOptionText(els.taskListFilter, "done", getUiText("done"));
+      setSelectOptionText(els.taskListFilter, "pinned", getUiText("pinned"));
+      els.taskListFilter.setAttribute("aria-label", lang === "en" ? "Result filter" : "查詢結果篩選");
+    }
+    if (els.queryCategory) {
+      els.queryCategory.setAttribute("aria-label", lang === "en" ? "Category filter" : "主分類查詢");
+    }
+    if (els.searchBtn) {
+      els.searchBtn.textContent = getUiText("search");
+    }
+    if (els.clearSearchBtn) {
+      els.clearSearchBtn.textContent = getUiText("clearSearch");
+    }
+    if (els.todayDateLabel) {
+      els.todayDateLabel.innerHTML = getUiText("todayDateLabel") + "：<strong id=\"today-auto-date\">-</strong>";
+      els.todayAutoDate = document.getElementById("today-auto-date");
+    }
+    if (els.panelToggleButtons && els.panelToggleButtons.length > 0) {
+      els.panelToggleButtons.forEach(function (btn) {
+        const targetId = String(btn.dataset.target || "").trim();
+        if (!targetId) {
+          return;
+        }
+        const panel = document.getElementById(targetId);
+        if (!panel) {
+          return;
+        }
+        updatePanelToggleButton(btn, panel);
+      });
+    }
+    syncUiLanguageSelect();
   }
 
   function normalizeServerInput(value) {
@@ -463,6 +923,23 @@
     }
     const cloudBase = getCloudApiBase(server);
     return buildCloudStateUrl(cloudBase, server.serverId);
+  }
+
+  function buildCloudTranslateUrl(baseUrl, serverId) {
+    const base = normalizeCloudApiBase(baseUrl);
+    if (!base || !serverId) {
+      return "";
+    }
+    return base + "/v1/translate/" + encodeURIComponent(serverId);
+  }
+
+  function getCurrentCloudTranslateUrl() {
+    const server = getCurrentServerConfig();
+    if (!server) {
+      return "";
+    }
+    const cloudBase = getCloudApiBase(server);
+    return buildCloudTranslateUrl(cloudBase, server.serverId);
   }
 
   function getLegacyKvdbUrl(server) {
@@ -733,12 +1210,256 @@
     }
   }
 
+  function normalizeTaskTranslations(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return {};
+    }
+    const result = {};
+    ["en", "zh"].forEach(function (lang) {
+      const item = raw[lang];
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return;
+      }
+      result[lang] = {
+        title: String(item.title || "").trim(),
+        description: String(item.description || "").trim(),
+        subcategory: String(item.subcategory || "").trim(),
+        _sig: String(item._sig || "").trim(),
+      };
+    });
+    return result;
+  }
+
+  function getTaskTranslationSignature(task) {
+    if (!task || typeof task !== "object") {
+      return "";
+    }
+    return [String(task.title || ""), String(task.description || ""), String(task.subcategory || "")].join("\n@@\n");
+  }
+
+  function hasCjkText(text) {
+    return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(String(text || ""));
+  }
+
+  function hasLatinText(text) {
+    return /[a-z]/i.test(String(text || ""));
+  }
+
+  function shouldTranslateTextForTarget(text, targetLang) {
+    const source = String(text || "").trim();
+    if (!source) {
+      return false;
+    }
+    const target = normalizeUiLanguage(targetLang);
+    if (target === "en") {
+      return hasCjkText(source);
+    }
+    if (target === "zh") {
+      return hasLatinText(source) && !hasCjkText(source);
+    }
+    return false;
+  }
+
+  function getTaskTranslatedField(task, field, lang) {
+    if (!task || !field) {
+      return "";
+    }
+    const normalizedLang = normalizeUiLanguage(lang);
+    const translations = task.translations && typeof task.translations === "object" ? task.translations : null;
+    if (!translations) {
+      return "";
+    }
+    const data = translations[normalizedLang];
+    if (!data || typeof data !== "object") {
+      return "";
+    }
+    if (String(data._sig || "") !== getTaskTranslationSignature(task)) {
+      return "";
+    }
+    return String(data[field] || "").trim();
+  }
+
+  function getTaskDisplayField(task, field) {
+    if (!task || !field) {
+      return "";
+    }
+    const original = String(task[field] || "").trim();
+    const translated = getTaskTranslatedField(task, field, state.uiLanguage);
+    return translated || original;
+  }
+
+  async function requestCloudTranslations(targetLang, texts) {
+    const target = normalizeUiLanguage(targetLang);
+    const sourceList = (Array.isArray(texts) ? texts : [])
+      .map(function (item) {
+        return String(item || "");
+      })
+      .filter(function (item) {
+        return item.length > 0;
+      });
+    if (sourceList.length === 0) {
+      return [];
+    }
+    const url = getCurrentCloudTranslateUrl();
+    if (!url) {
+      throw new Error("translate url missing");
+    }
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetLang: target,
+          texts: sourceList,
+        }),
+      },
+      CLOUD_REQUEST_TIMEOUT_MS + 6000,
+    );
+    if (!response.ok) {
+      throw new Error("translate failed: " + response.status);
+    }
+    const parsed = await response.json();
+    if (!parsed || !Array.isArray(parsed.translations)) {
+      throw new Error("translate invalid response");
+    }
+    const result = parsed.translations.map(function (item) {
+      return String(item == null ? "" : item).trim();
+    });
+    if (result.length !== sourceList.length) {
+      throw new Error("translate response length mismatch");
+    }
+    return result;
+  }
+
+  async function ensureTaskTranslationsForLanguage(targetLang) {
+    const target = normalizeUiLanguage(targetLang);
+    const tasks = Array.isArray(state.tasks) ? state.tasks : [];
+    if (tasks.length === 0) {
+      return false;
+    }
+
+    const jobs = [];
+    let changedWithoutApi = false;
+    tasks.forEach(function (task) {
+      const sig = getTaskTranslationSignature(task);
+      if (!task.translations || typeof task.translations !== "object" || Array.isArray(task.translations)) {
+        task.translations = {};
+      }
+      const existing = task.translations[target];
+      if (existing && typeof existing === "object" && String(existing._sig || "") === sig) {
+        return;
+      }
+      const title = String(task.title || "").trim();
+      const description = String(task.description || "").trim();
+      const subcategory = String(task.subcategory || "").trim();
+      const hasAnyNeed =
+        shouldTranslateTextForTarget(title, target) ||
+        shouldTranslateTextForTarget(description, target) ||
+        shouldTranslateTextForTarget(subcategory, target);
+      if (!hasAnyNeed) {
+        task.translations[target] = {
+          title: title,
+          description: description,
+          subcategory: subcategory,
+          _sig: sig,
+        };
+        changedWithoutApi = true;
+        return;
+      }
+      jobs.push({
+        task: task,
+        sig: sig,
+        title: title,
+        description: description,
+        subcategory: subcategory,
+      });
+    });
+
+    if (jobs.length === 0) {
+      if (changedWithoutApi) {
+        saveTasks();
+      }
+      return changedWithoutApi;
+    }
+
+    const uniqueTexts = [];
+    const uniqueMap = new Map();
+    jobs.forEach(function (job) {
+      ["title", "description", "subcategory"].forEach(function (field) {
+        const value = String(job[field] || "").trim();
+        if (!value || !shouldTranslateTextForTarget(value, target)) {
+          return;
+        }
+        if (uniqueMap.has(value)) {
+          return;
+        }
+        uniqueMap.set(value, uniqueTexts.length);
+        uniqueTexts.push(value);
+      });
+    });
+
+    const translatedMap = new Map();
+    if (uniqueTexts.length > 0) {
+      try {
+        for (let i = 0; i < uniqueTexts.length; i += TRANSLATE_BATCH_SIZE) {
+          const chunk = uniqueTexts.slice(i, i + TRANSLATE_BATCH_SIZE);
+          const translatedChunk = await requestCloudTranslations(target, chunk);
+          chunk.forEach(function (source, index) {
+            translatedMap.set(source, translatedChunk[index] || source);
+          });
+        }
+      } catch (error) {
+        console.error("ensureTaskTranslationsForLanguage error", error);
+        if (Date.now() - state.cloudLastErrorAt > 10000) {
+          state.cloudLastErrorAt = Date.now();
+          showToast(
+            target === "en"
+              ? "Translation unavailable. Showing original text."
+              : "翻譯暫時失敗，先顯示原文。",
+          );
+        }
+        return false;
+      }
+    }
+
+    jobs.forEach(function (job) {
+      const title =
+        job.title && shouldTranslateTextForTarget(job.title, target)
+          ? translatedMap.get(job.title) || job.title
+          : job.title;
+      const description =
+        job.description && shouldTranslateTextForTarget(job.description, target)
+          ? translatedMap.get(job.description) || job.description
+          : job.description;
+      const subcategory =
+        job.subcategory && shouldTranslateTextForTarget(job.subcategory, target)
+          ? translatedMap.get(job.subcategory) || job.subcategory
+          : job.subcategory;
+
+      job.task.translations[target] = {
+        title: String(title || "").trim(),
+        description: String(description || "").trim(),
+        subcategory: String(subcategory || "").trim(),
+        _sig: job.sig,
+      };
+      touchTask(job.task);
+    });
+
+    saveTasks();
+    return true;
+  }
+
   function handlePasswordSubmit(event) {
     event.preventDefault();
     const entered = normalizeServerInput(els.passwordInput.value || "");
     const server = resolveServerByInput(entered);
     if (!server) {
-      showPasswordError("使用者錯誤（請用英數、-、_，至少 3 碼）。");
+      showPasswordError(
+        isEnglishUi()
+          ? "Invalid user. Use letters/numbers/-/_ and at least 3 characters."
+          : "使用者錯誤（請用英數、-、_，至少 3 碼）。",
+      );
       return;
     }
     state.currentServerId = server.serverId;
@@ -746,7 +1467,11 @@
     state.currentProfile = resolveProfileForServer(server.serverId);
     unlockAccessGate();
     init();
-    showToast("已進入 " + server.displayName + " 伺服器。");
+    showToast(
+      isEnglishUi()
+        ? "Entered server: " + server.displayName
+        : "已進入 " + server.displayName + " 伺服器。",
+    );
   }
 
   function unlockAccessGate() {
@@ -764,7 +1489,7 @@
     if (!els.passwordError) {
       return;
     }
-    els.passwordError.textContent = message || "使用者錯誤。";
+    els.passwordError.textContent = message || (isEnglishUi() ? "Invalid user." : "使用者錯誤。");
     els.passwordError.classList.remove("hidden");
   }
 
@@ -781,6 +1506,8 @@
     els.passwordForm = document.getElementById("password-form");
     els.passwordInput = document.getElementById("password-input");
     els.passwordError = document.getElementById("password-error");
+    els.uiLanguageSelect = document.getElementById("ui-language-select");
+    els.todayDateLabel = document.getElementById("today-date-label");
     els.taskForm = document.getElementById("task-form");
     els.taskCategory = document.getElementById("task-category");
     els.taskSubcategory = document.getElementById("task-subcategory");
@@ -832,9 +1559,13 @@
     els.todayOccupancyRate = document.getElementById("today-occupancy-rate");
     els.todayOverviewSaveBtn = document.getElementById("today-overview-save-btn");
     els.panelToggleButtons = Array.prototype.slice.call(document.querySelectorAll(".panel-toggle-btn"));
+    els.tableHeaderCells = Array.prototype.slice.call(document.querySelectorAll("#task-list-panel thead th"));
   }
 
   function bindEvents() {
+    if (els.uiLanguageSelect) {
+      els.uiLanguageSelect.addEventListener("change", handleUiLanguageChange);
+    }
     els.taskForm.addEventListener("submit", handleAddTask);
     els.taskCategory.addEventListener("change", updateSubcategoryOptions);
     els.taskSubcategory.addEventListener("change", updateFormLockState);
@@ -929,6 +1660,23 @@
         handleMobileUpcomingClose();
       }
     });
+  }
+
+  async function handleUiLanguageChange() {
+    const nextLang = normalizeUiLanguage(els.uiLanguageSelect ? els.uiLanguageSelect.value : state.uiLanguage);
+    if (nextLang === normalizeUiLanguage(state.uiLanguage)) {
+      return;
+    }
+    state.uiLanguage = nextLang;
+    saveUiLanguage();
+    applyUiLanguageToStatic();
+    setupCategorySelectOptions();
+    updateSubcategoryOptions();
+    updateFormLockState();
+    renderTodayOverviewBar();
+    renderAll();
+    await ensureTaskTranslationsForLanguage(nextLang);
+    renderAll();
   }
 
   function setDefaultDueTime() {
@@ -1105,7 +1853,7 @@
 
   function updatePanelToggleButton(btn, panel) {
     const isCollapsed = panel.classList.contains("is-collapsed");
-    btn.textContent = isCollapsed ? "展開" : "收合";
+    btn.textContent = isCollapsed ? getUiText("expand") : getUiText("collapse");
     btn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
   }
 
@@ -1357,7 +2105,7 @@
     const current = String(els.taskSubcategory.value || "").trim();
 
     if (!isValidCategory(category)) {
-      els.taskSubcategory.innerHTML = '<option value="">請先選主分類</option>';
+      els.taskSubcategory.innerHTML = '<option value="">' + escapeHtml(getUiText("subcategoryChooseCategory")) + "</option>";
       els.taskSubcategory.disabled = true;
       els.taskSubcategory.required = false;
       updateFormLockState();
@@ -1366,7 +2114,7 @@
 
     const options = getSubcategoryOptions(category);
     if (options.length === 0) {
-      els.taskSubcategory.innerHTML = '<option value="">此主分類無子分類</option>';
+      els.taskSubcategory.innerHTML = '<option value="">' + escapeHtml(getUiText("subcategoryNone")) + "</option>";
       els.taskSubcategory.disabled = true;
       els.taskSubcategory.required = false;
       updateFormLockState();
@@ -1376,10 +2124,12 @@
     els.taskSubcategory.disabled = false;
     els.taskSubcategory.required = true;
     els.taskSubcategory.innerHTML =
-      '<option value="" disabled selected>請選擇子分類</option>' +
+      '<option value="" disabled selected>' +
+      escapeHtml(getUiText("subcategoryChoose")) +
+      "</option>" +
       options
         .map(function (item) {
-          return '<option value="' + item + '">' + item + "</option>";
+          return '<option value="' + item + '">' + escapeHtml(getSubcategoryDisplayName(item)) + "</option>";
         })
         .join("");
 
@@ -1400,10 +2150,12 @@
     const categories = getActiveCategories();
     const current = String(els.taskCategory.value || "").trim();
     els.taskCategory.innerHTML =
-      '<option value="" disabled selected>請選擇主分類</option>' +
+      '<option value="" disabled selected>' +
+      escapeHtml(isEnglishUi() ? "Choose category" : "請選擇主分類") +
+      "</option>" +
       categories
         .map(function (category) {
-          return '<option value="' + category + '">' + category + "</option>";
+          return '<option value="' + category + '">' + escapeHtml(getCategoryDisplayName(category)) + "</option>";
         })
         .join("");
     if (isValidCategory(current)) {
@@ -1419,10 +2171,10 @@
     }
     const categories = getActiveCategories();
     const current = normalizeQueryCategory(state.todayCategory || els.todayCategoryFilter.value || "all");
-    els.todayCategoryFilter.innerHTML = ['<option value="all">全部主分類</option>']
+    els.todayCategoryFilter.innerHTML = ['<option value="all">' + escapeHtml(getUiText("allCategories")) + "</option>"]
       .concat(
         categories.map(function (category) {
-          return '<option value="' + category + '">' + category + "</option>";
+          return '<option value="' + category + '">' + escapeHtml(getCategoryDisplayName(category)) + "</option>";
         }),
       )
       .join("");
@@ -1436,10 +2188,10 @@
     }
     const categories = getActiveCategories();
     const current = normalizeQueryCategory(els.queryCategory.value || state.queryCategory);
-    const optionsHtml = ['<option value="all">全部主分類</option>']
+    const optionsHtml = ['<option value="all">' + escapeHtml(getUiText("allCategories")) + "</option>"]
       .concat(
         categories.map(function (category) {
-          return '<option value="' + category + '">' + category + "</option>";
+          return '<option value="' + category + '">' + escapeHtml(getCategoryDisplayName(category)) + "</option>";
         }),
       )
       .join("");
@@ -1472,21 +2224,26 @@
     els.addTaskBtn.disabled = locked;
 
     if (!isValidCategory(category)) {
-      els.categoryTip.textContent = "請先選主分類，再填寫其餘欄位。";
+      els.categoryTip.textContent = getUiText("categoryTipSelectCategory");
       return;
     }
 
     if (hasSubcategoryOptions(category) && !normalizeSubcategory(category, subcategory)) {
-      els.categoryTip.textContent = "此主分類需要子分類，請先選擇子分類。";
+      els.categoryTip.textContent = getUiText("categoryTipNeedSub");
       return;
     }
 
     if (hasSubcategoryOptions(category)) {
-      els.categoryTip.textContent = "目前分類：" + category + " / " + subcategory;
+      els.categoryTip.textContent = getUiText("categoryTipCurrentSub", {
+        category: getCategoryDisplayName(category),
+        subcategory: getSubcategoryDisplayName(subcategory),
+      });
       return;
     }
 
-    els.categoryTip.textContent = "目前分類：" + category;
+    els.categoryTip.textContent = getUiText("categoryTipCurrent", {
+      category: getCategoryDisplayName(category),
+    });
   }
 
   function loadTasks() {
@@ -1564,6 +2321,7 @@
       owner: String(input.owner || "").trim(),
       completedBy: String(input.completedBy || "").trim(),
       description: String(input.description || "").trim(),
+      translations: normalizeTaskTranslations(input.translations),
       startAt: hasStartAt ? new Date(startMs).toISOString() : null,
       endAt: hasEndAt ? new Date(endMs).toISOString() : null,
       dueAt: hasStartAt ? new Date(startMs).toISOString() : null,
@@ -1580,7 +2338,7 @@
     event.preventDefault();
 
     if (!isCategorySelectionReady()) {
-      showToast("請先完成分類選擇。");
+      showToast(isEnglishUi() ? "Please finish category selection first." : "請先完成分類選擇。");
       return;
     }
 
@@ -1603,11 +2361,11 @@
     }
 
     if (!isValidCategory(category) || !title || !owner) {
-      showToast("請填寫完整資料後再新增。");
+      showToast(isEnglishUi() ? "Please fill required fields." : "請填寫完整資料後再新增。");
       return;
     }
     if (hasSubcategoryOptions(category) && !normalizedSubcategory) {
-      showToast("請先選擇子分類。");
+      showToast(isEnglishUi() ? "Please choose a subcategory." : "請先選擇子分類。");
       return;
     }
 
@@ -1616,7 +2374,7 @@
         return item.id === state.editingTaskId;
       });
       if (!task) {
-        showToast("找不到要修改的待辦。");
+        showToast(isEnglishUi() ? "Task not found." : "找不到要修改的待辦。");
         resetTaskForm();
         return;
       }
@@ -1625,6 +2383,7 @@
       task.title = title;
       task.owner = owner;
       task.description = description;
+      task.translations = {};
       task.startAt = range.startAtIso;
       task.endAt = range.endAtIso;
       task.dueAt = range.startAtIso;
@@ -1638,7 +2397,7 @@
       saveTasks();
       renderAll();
       resetTaskForm();
-      showToast("待辦已修改。");
+      showToast(isEnglishUi() ? "Task updated." : "待辦已修改。");
       return;
     }
 
@@ -1651,6 +2410,7 @@
       owner: owner,
       completedBy: "",
       description: description,
+      translations: {},
       startAt: range.startAtIso,
       endAt: range.endAtIso,
       dueAt: range.startAtIso,
@@ -1666,7 +2426,7 @@
     saveTasks();
     renderAll();
     resetTaskForm();
-    showToast("待辦已新增。");
+    showToast(isEnglishUi() ? "Task added." : "待辦已新增。");
   }
 
   function applyDateQuery() {
@@ -1744,13 +2504,16 @@
 
     if (action === "toggle") {
       if (task.status === "pending") {
-        const input = window.prompt("請輸入完成人：", task.completedBy || "");
+        const input = window.prompt(
+          normalizeUiLanguage(state.uiLanguage) === "en" ? "Please enter completed by:" : "請輸入完成人：",
+          task.completedBy || "",
+        );
         if (input === null) {
           return;
         }
         const completedBy = input.trim();
         if (!completedBy) {
-          showToast("請填寫完成人後才能完成。");
+          showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Completed by is required." : "請填寫完成人後才能完成。");
           return;
         }
         task.status = "done";
@@ -1764,7 +2527,15 @@
       touchTask(task);
       saveTasks();
       renderAll();
-      showToast(task.status === "done" ? "已標記完成。" : "已恢復為待辦。");
+      showToast(
+        task.status === "done"
+          ? normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Marked as done."
+            : "已標記完成。"
+          : normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Restored to pending."
+            : "已恢復為待辦。",
+      );
       return;
     }
 
@@ -1783,12 +2554,24 @@
       touchTask(task);
       saveTasks();
       renderAll();
-      showToast(task.pinned ? "已設為置頂。" : "已取消置頂。");
+      showToast(
+        task.pinned
+          ? normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Pinned."
+            : "已設為置頂。"
+          : normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Unpinned."
+            : "已取消置頂。",
+      );
       return;
     }
 
     if (action === "delete") {
-      const ok = window.confirm("確定要取消並刪除此待辦嗎？");
+      const ok = window.confirm(
+        normalizeUiLanguage(state.uiLanguage) === "en"
+          ? "Are you sure you want to cancel and delete this task?"
+          : "確定要取消並刪除此待辦嗎？",
+      );
       if (!ok) {
         return;
       }
@@ -1802,7 +2585,7 @@
       saveTasks();
       saveDeletedTaskIds();
       renderAll();
-      showToast("待辦已刪除。");
+      showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Task deleted." : "待辦已刪除。");
     }
   }
 
@@ -1837,7 +2620,7 @@
     }
     els.taskPinned.checked = Boolean(task.pinned);
     els.taskDescription.value = task.description || "";
-    els.addTaskBtn.textContent = "儲存修改";
+    els.addTaskBtn.textContent = getUiText("save");
     els.cancelEditBtn.classList.remove("hidden");
     updateFormLockState();
     scrollToTaskFormPanel();
@@ -1851,7 +2634,7 @@
         els.taskTitle.select();
       }
     }
-    showToast("已載入待辦，可開始修改。");
+    showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Task loaded. You can edit now." : "已載入待辦，可開始修改。");
   }
 
   function scrollToTaskFormPanel() {
@@ -1893,12 +2676,12 @@
       return;
     }
     resetTaskForm();
-    showToast("已取消修改。");
+    showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Edit canceled." : "已取消修改。");
   }
 
   function handleClearForm() {
     resetTaskForm();
-    showToast("表單已清空。");
+    showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Form cleared." : "表單已清空。");
   }
 
   function resetTaskForm() {
@@ -1906,7 +2689,7 @@
     els.taskForm.reset();
     updateSubcategoryOptions();
     setDefaultDueTime();
-    els.addTaskBtn.textContent = "新增待辦";
+    els.addTaskBtn.textContent = getUiText("addTask");
     els.cancelEditBtn.classList.add("hidden");
     updateFormLockState();
   }
@@ -1922,10 +2705,13 @@
     const list = getFilteredTasks();
     const hasKeyword = Boolean(normalizeQueryKeyword(state.queryKeyword));
     if (!state.queryDate && state.queryStatus === "all" && state.queryCategory === "all" && !hasKeyword) {
-      els.queryResultText.textContent = "目前顯示全部待辦，共 " + list.length + " 筆。";
+      els.queryResultText.textContent = getUiText("queryAllText", { count: list.length });
       return;
     }
-    els.queryResultText.textContent = "目前顯示「" + buildQueryConditionText() + "」，共 " + list.length + " 筆。";
+    els.queryResultText.textContent = getUiText("queryConditionText", {
+      condition: buildQueryConditionText(),
+      count: list.length,
+    });
   }
 
   function renderTodayTasks() {
@@ -1955,9 +2741,10 @@
     });
 
     const categoryLabel = selectedCategory === "all" ? "全部主分類" : selectedCategory;
+    const displayCategoryLabel = selectedCategory === "all" ? getUiText("allCategories") : getCategoryDisplayName(selectedCategory);
     els.todayPinnedList.innerHTML =
       pinnedList.length === 0
-        ? '<li class="today-pinned-empty">目前沒有置頂事項。</li>'
+        ? '<li class="today-pinned-empty">' + escapeHtml(getUiText("todayNoPinned")) + "</li>"
         : pinnedList
             .map(function (task) {
               return renderTodayTaskItem(task, true);
@@ -1965,8 +2752,8 @@
             .join("");
 
     if (todayAllList.length === 0) {
-      els.todayTaskSummary.textContent = "今日共 0 筆事項（" + categoryLabel + "）。";
-      els.todayTaskList.innerHTML = '<li class="today-empty">今日沒有排程事項。</li>';
+      els.todayTaskSummary.textContent = getUiText("todaySummaryZero", { category: displayCategoryLabel });
+      els.todayTaskList.innerHTML = '<li class="today-empty">' + escapeHtml(getUiText("todayNoSchedule")) + "</li>";
       return;
     }
 
@@ -1974,20 +2761,16 @@
       return task.status === "pending";
     }).length;
     const doneCount = todayAllList.length - pendingCount;
-    els.todayTaskSummary.textContent =
-      "今日共 " +
-      todayAllList.length +
-      " 筆，待處理 " +
-      pendingCount +
-      " 筆，已完成 " +
-      doneCount +
-      " 筆（" +
-      categoryLabel +
-      "）。";
+    els.todayTaskSummary.textContent = getUiText("todaySummary", {
+      total: todayAllList.length,
+      pending: pendingCount,
+      done: doneCount,
+      category: displayCategoryLabel,
+    });
 
     els.todayTaskList.innerHTML =
       normalList.length === 0
-        ? '<li class="today-empty">今日一般事項為 0 筆。</li>'
+        ? '<li class="today-empty">' + escapeHtml(getUiText("todayNoNormal")) + "</li>"
         : normalList
             .map(function (task) {
               return renderTodayTaskItem(task, false);
@@ -1998,23 +2781,33 @@
   function renderTodayTaskItem(task, inPinnedZone) {
     const isDone = task.status === "done";
     const statusClass = isDone ? "status-done" : "status-pending";
-    const statusText = isDone ? "已完成" : "待處理";
-    const pinTag = task.pinned ? '<span class="today-pill">置頂</span>' : "";
-    const pinBtnText = task.pinned ? "取消置頂" : "置頂";
-    const doneBtnText = isDone ? "取消完成" : "完成";
+    const statusText = isDone ? getUiText("statusDone") : getUiText("statusPending");
+    const pinTag = task.pinned ? '<span class="today-pill">' + escapeHtml(getUiText("pinned")) + "</span>" : "";
+    const pinBtnText = task.pinned ? getUiText("actionUnpin") : getUiText("actionPin");
+    const doneBtnText = isDone ? getUiText("actionUndoComplete") : getUiText("actionComplete");
     const countdownText = formatCountdown(getTaskStartAt(task), task.allDay, isDone);
-    const completionText = isDone && task.completedBy ? " | 完成人：" + escapeHtml(task.completedBy) : "";
+    const displayCategory = getCategoryDisplayName(task.category || getUiText("uncategorized"));
+    const displaySubcategory = getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory);
+    const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
+    const displayDescription = getTaskDisplayField(task, "description");
+    const completionText = isDone && task.completedBy ? " | " + getUiText("completedBy") + "：" + escapeHtml(task.completedBy) : "";
     const metaLineText =
-      escapeHtml(task.category) +
-      (task.subcategory ? " / " + escapeHtml(task.subcategory) : "") +
-      " | 填寫人：" +
-      escapeHtml(task.owner || "未填寫") +
+      escapeHtml(displayCategory) +
+      (displaySubcategory ? " / " + escapeHtml(displaySubcategory) : "") +
+      " | " +
+      getUiText("owner") +
+      "：" +
+      escapeHtml(task.owner || getUiText("notFilled")) +
       completionText +
-      " | 倒數：" +
+      " | " +
+      getUiText("countdown") +
+      "：" +
       escapeHtml(countdownText);
-    const descriptionHtml = task.description
-      ? '<p class="today-desc"><span class="today-desc-label">內容：</span>' +
-        escapeHtml(task.description).replace(/\n/g, "<br>") +
+    const descriptionHtml = displayDescription
+      ? '<p class="today-desc"><span class="today-desc-label">' +
+        escapeHtml(getUiText("content")) +
+        "：</span>" +
+        escapeHtml(displayDescription).replace(/\n/g, "<br>") +
         "</p>"
       : "";
     const dueMs = getTaskStartAt(task) ? new Date(getTaskStartAt(task)).getTime() : Number.NaN;
@@ -2033,7 +2826,7 @@
       statusText +
       "</span>" +
       '<span class="today-category-pill">' +
-      escapeHtml(task.category || "未分類") +
+      escapeHtml(displayCategory || getUiText("uncategorized")) +
       "</span>" +
       pinTag +
       '<span class="today-time">' +
@@ -2041,7 +2834,7 @@
       "</span>" +
       "</div>" +
       '<p class="today-title">' +
-      escapeHtml(task.title) +
+      escapeHtml(displayTitle) +
       "</p>" +
       '<p class="today-meta today-meta-line">' +
       metaLineText +
@@ -2055,13 +2848,19 @@
       "</button>" +
       '<button class="action-btn action-edit" type="button" data-action="edit" data-id="' +
       escapeHtml(task.id) +
-      '">修改</button>' +
+      '">' +
+      getUiText("actionEdit") +
+      "</button>" +
       '<button class="action-btn action-copy" type="button" data-action="copy" data-id="' +
       escapeHtml(task.id) +
-      '">一鍵複製</button>' +
+      '">' +
+      getUiText("actionCopy") +
+      "</button>" +
       '<button class="action-btn action-cancel" type="button" data-action="cancel" data-id="' +
       escapeHtml(task.id) +
-      '">取消</button>' +
+      '">' +
+      getUiText("actionCancel") +
+      "</button>" +
       '<button class="action-btn action-pin" type="button" data-action="pin" data-id="' +
       escapeHtml(task.id) +
       '">' +
@@ -2076,7 +2875,7 @@
     const list = getTaskListFilteredTasks();
     if (list.length === 0) {
       els.tableBody.innerHTML =
-        '<tr class="empty-row"><td colspan="10">目前沒有符合條件的待辦事項。</td></tr>';
+        '<tr class="empty-row"><td colspan="10">' + escapeHtml(getUiText("taskTableEmpty")) + "</td></tr>";
       return;
     }
 
@@ -2084,15 +2883,20 @@
       .map(function (task) {
         const isDone = task.status === "done";
         const statusClass = isDone ? "status-done" : "status-pending";
-        const statusText = isDone ? "已完成" : "待處理";
-        const pinnedText = task.pinned ? "置頂中" : "-";
-        const pinBtnText = task.pinned ? "取消置頂" : "置頂";
+        const statusText = isDone ? getUiText("statusDone") : getUiText("statusPending");
+        const pinnedText = task.pinned ? getUiText("pinned") : "-";
+        const pinBtnText = task.pinned ? getUiText("actionUnpin") : getUiText("actionPin");
+        const displayCategory = getCategoryDisplayName(task.category || getUiText("uncategorized"));
+        const displaySubcategoryRaw = getTaskDisplayField(task, "subcategory") || task.subcategory;
+        const displaySubcategory = getSubcategoryDisplayName(displaySubcategoryRaw);
+        const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
+        const displayDescription = getTaskDisplayField(task, "description");
         const completedByText = task.status === "done" && task.completedBy ? escapeHtml(task.completedBy) : "-";
-        const subcategoryHtml = task.subcategory
-          ? escapeHtml(task.subcategory)
+        const subcategoryHtml = displaySubcategory
+          ? escapeHtml(displaySubcategory)
           : '<span style="color:#7a9198;">-</span>';
-        const descHtml = task.description
-          ? escapeHtml(task.description).replace(/\n/g, "<br>")
+        const descHtml = displayDescription
+          ? escapeHtml(displayDescription).replace(/\n/g, "<br>")
           : '<span style="color:#7a9198;">-</span>';
         return (
           '<tr class="' +
@@ -2107,13 +2911,13 @@
           pinnedText +
           "</td>" +
           "<td>" +
-          escapeHtml(task.category) +
+          escapeHtml(displayCategory) +
           "</td>" +
           "<td>" +
           subcategoryHtml +
           "</td>" +
           "<td>" +
-          escapeHtml(task.title) +
+          escapeHtml(displayTitle) +
           "</td>" +
           "<td>" +
           escapeHtml(task.owner) +
@@ -2131,14 +2935,18 @@
           '<button class="action-btn action-done" type="button" data-action="toggle" data-id="' +
           task.id +
           '">' +
-          (isDone ? "恢復" : "完成") +
+          (isDone ? getUiText("actionUndoComplete") : getUiText("actionComplete")) +
           "</button>" +
           '<button class="action-btn action-edit" type="button" data-action="edit" data-id="' +
           task.id +
-          '">修改</button>' +
+          '">' +
+          getUiText("actionEdit") +
+          "</button>" +
           '<button class="action-btn action-copy" type="button" data-action="copy" data-id="' +
           task.id +
-          '">一鍵複製</button>' +
+          '">' +
+          getUiText("actionCopy") +
+          "</button>" +
           '<button class="action-btn action-pin" type="button" data-action="pin" data-id="' +
           task.id +
           '">' +
@@ -2146,7 +2954,9 @@
           "</button>" +
           '<button class="action-btn action-delete" type="button" data-action="delete" data-id="' +
           task.id +
-          '">刪除</button>' +
+          '">' +
+          getUiText("actionDelete") +
+          "</button>" +
           "</div></td>" +
           "</tr>"
         );
@@ -2187,43 +2997,51 @@
 
     const total = dueNow.length + within30.length + within60.length;
     if (total === 0) {
-      els.upcomingSummary.textContent = "目前沒有 1 小時內待辦。";
-      els.upcomingTaskList.innerHTML = '<li class="upcoming-empty">30 分鐘與 1 小時提醒區間目前無待辦。</li>';
+      els.upcomingSummary.textContent = getUiText("upcomingSummaryEmpty");
+      els.upcomingTaskList.innerHTML = '<li class="upcoming-empty">' + escapeHtml(getUiText("upcomingListEmpty")) + "</li>";
       return;
     }
 
     const summaryParts = [];
     if (dueNow.length > 0) {
-      summaryParts.push("已到時間 " + dueNow.length + " 筆");
+      summaryParts.push(getUiText("timeWindowDue") + " " + dueNow.length);
     }
-    summaryParts.push("30 分鐘內 " + within30.length + " 筆");
-    summaryParts.push("1 小時內 " + within60.length + " 筆");
-    els.upcomingSummary.textContent = summaryParts.join("，") + "。";
+    summaryParts.push(getUiText("timeWindow30") + " " + within30.length);
+    summaryParts.push(getUiText("timeWindow60") + " " + within60.length);
+    const isEnglish = normalizeUiLanguage(state.uiLanguage) === "en";
+    els.upcomingSummary.textContent = summaryParts.join(isEnglish ? ", " : "，") + (isEnglish ? "." : "。");
 
     const items = [];
     dueNow.forEach(function (task) {
-      items.push(renderUpcomingItem(task, "已到時間"));
+      items.push(renderUpcomingItem(task, getUiText("timeWindowDue")));
     });
     within30.forEach(function (task) {
-      items.push(renderUpcomingItem(task, "30 分鐘內"));
+      items.push(renderUpcomingItem(task, getUiText("timeWindow30")));
     });
     within60.forEach(function (task) {
-      items.push(renderUpcomingItem(task, "1 小時內"));
+      items.push(renderUpcomingItem(task, getUiText("timeWindow60")));
     });
     els.upcomingTaskList.innerHTML = items.join("");
   }
 
   function renderUpcomingItem(task, windowTag) {
-    const detailText = task.description
-      ? escapeHtml(task.description).replace(/\n/g, "<br>")
-      : "（無）";
+    const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
+    const displayDescription = getTaskDisplayField(task, "description");
+    const displaySubcategory = getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory);
+    const detailText = displayDescription
+      ? escapeHtml(displayDescription).replace(/\n/g, "<br>")
+      : escapeHtml(getUiText("noData"));
     const countdownText = formatCountdown(getTaskStartAt(task), task.allDay, false);
     const metaLineText =
-      escapeHtml(task.category) +
-      (task.subcategory ? " / " + escapeHtml(task.subcategory) : "") +
-      " | 填寫人：" +
-      escapeHtml(task.owner || "未填寫") +
-      " | 倒數：" +
+      escapeHtml(getCategoryDisplayName(task.category || getUiText("uncategorized"))) +
+      (displaySubcategory ? " / " + escapeHtml(displaySubcategory) : "") +
+      " | " +
+      getUiText("owner") +
+      "：" +
+      escapeHtml(task.owner || getUiText("notFilled")) +
+      " | " +
+      getUiText("countdown") +
+      "：" +
       escapeHtml(countdownText);
 
     return (
@@ -2237,15 +3055,19 @@
       "</span>" +
       "</div>" +
       '<p class="upcoming-title">' +
-      escapeHtml(task.title) +
+      escapeHtml(displayTitle) +
       "</p>" +
       '<p class="upcoming-meta upcoming-meta-line">' +
       metaLineText +
       "</p>" +
-      '<p class="upcoming-detail"><span class="upcoming-detail-label">時間：</span>' +
+      '<p class="upcoming-detail"><span class="upcoming-detail-label">' +
+      escapeHtml(getUiText("time")) +
+      "：</span>" +
       escapeHtml(formatDueDisplay(task)) +
       "</p>" +
-      '<p class="upcoming-detail"><span class="upcoming-detail-label">內容：</span>' +
+      '<p class="upcoming-detail"><span class="upcoming-detail-label">' +
+      escapeHtml(getUiText("content")) +
+      "：</span>" +
       detailText +
       "</p>" +
       "</li>"
@@ -2328,7 +3150,11 @@
   }
 
   function sendReminder(task) {
-    const text = "待辦「" + task.title + "」已到時間。";
+    const taskTitle = getTaskDisplayField(task, "title") || task.title || "-";
+    const text =
+      normalizeUiLanguage(state.uiLanguage) === "en"
+        ? 'Task "' + taskTitle + '" is now due.'
+        : "待辦「" + taskTitle + "」已到時間。";
     showToast(text);
 
     if (!els.notificationToggle.checked) {
@@ -2338,36 +3164,38 @@
       return;
     }
     if (Notification.permission === "granted") {
-      const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
-      new Notification("工作交接提醒", {
+      const categoryText =
+        getCategoryDisplayName(task.category) +
+        (task.subcategory ? "/" + getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory) : "");
+      new Notification(normalizeUiLanguage(state.uiLanguage) === "en" ? "Handover Reminder" : "工作交接提醒", {
         body:
-          task.title +
-          "（分類：" +
+          taskTitle +
+          (normalizeUiLanguage(state.uiLanguage) === "en" ? " (Category: " : "（分類：") +
           categoryText +
-          "，填寫人：" +
-          (task.owner || "未填寫") +
-          "）",
+          (normalizeUiLanguage(state.uiLanguage) === "en" ? ", Owner: " : "，填寫人：") +
+          (task.owner || getUiText("notFilled")) +
+          (normalizeUiLanguage(state.uiLanguage) === "en" ? ")" : "）"),
       });
     }
   }
 
   async function requestNotificationPermission() {
     if (!("Notification" in window)) {
-      showToast("目前瀏覽器不支援通知功能。");
+      showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Browser notifications are not supported." : "目前瀏覽器不支援通知功能。");
       return;
     }
     try {
       const result = await Notification.requestPermission();
       if (result === "granted") {
-        showToast("已授權瀏覽器通知。");
+        showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notifications enabled." : "已授權瀏覽器通知。");
       } else if (result === "denied") {
-        showToast("通知已被封鎖，可到瀏覽器設定開啟。");
+        showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notifications blocked. Enable in browser settings." : "通知已被封鎖，可到瀏覽器設定開啟。");
       } else {
-        showToast("通知授權尚未開啟。");
+        showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notification permission not granted." : "通知授權尚未開啟。");
       }
     } catch (error) {
       console.error("requestPermission error", error);
-      showToast("通知授權失敗。");
+      showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notification authorization failed." : "通知授權失敗。");
     }
   }
 
@@ -3467,17 +4295,17 @@
 
   function getQueryStatusLabel(status) {
     if (status === "pending") {
-      return "未完成";
+      return getUiText("pending");
     }
     if (status === "done") {
-      return "已完成";
+      return getUiText("done");
     }
-    return "全部狀態";
+    return getUiText("allStatus");
   }
 
   function getQueryCategoryLabel(category) {
     const normalized = normalizeQueryCategory(category);
-    return normalized === "all" ? "全部主分類" : normalized;
+    return normalized === "all" ? getUiText("allCategories") : getCategoryDisplayName(normalized);
   }
 
   function buildQueryConditionText() {
@@ -3485,10 +4313,11 @@
   }
 
   function buildConditionText(dateValue, statusValue, categoryValue, keywordValue) {
-    const dateText = dateValue ? dateValue.replace(/-/g, "/") : "全部日期";
+    const dateText = dateValue ? dateValue.replace(/-/g, "/") : normalizeUiLanguage(state.uiLanguage) === "en" ? "All Dates" : "全部日期";
     const categoryText = getQueryCategoryLabel(categoryValue);
     const keywordText = normalizeQueryKeyword(keywordValue);
-    const keywordLabel = keywordText ? ("關鍵字：" + keywordText) : "關鍵字：全部";
+    const keywordPrefix = normalizeUiLanguage(state.uiLanguage) === "en" ? "Keyword: " : "關鍵字：";
+    const keywordLabel = keywordText ? keywordPrefix + keywordText : keywordPrefix + (normalizeUiLanguage(state.uiLanguage) === "en" ? "All" : "全部");
     return dateText + " / " + getQueryStatusLabel(statusValue) + " / " + categoryText + " / " + keywordLabel;
   }
 
@@ -3513,6 +4342,9 @@
     }
     if (normalizedKeyword) {
       list = list.filter(function (task) {
+        const translatedTitle = getTaskTranslatedField(task, "title", state.uiLanguage);
+        const translatedDesc = getTaskTranslatedField(task, "description", state.uiLanguage);
+        const translatedSub = getTaskTranslatedField(task, "subcategory", state.uiLanguage);
         const haystack = [
           task.category,
           task.subcategory,
@@ -3520,6 +4352,11 @@
           task.owner,
           task.completedBy,
           task.description,
+          getCategoryDisplayName(task.category),
+          getSubcategoryDisplayName(task.subcategory),
+          translatedSub,
+          translatedTitle,
+          translatedDesc,
         ]
           .map(function (value) {
             return String(value || "");
@@ -3535,11 +4372,19 @@
   function copyTaskText(task) {
     const text = buildTaskCopyText(task);
     if (!text) {
-      showToast("無可複製內容。");
+      showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Nothing to copy." : "無可複製內容。");
       return;
     }
     copyTextToClipboard(text).then(function (ok) {
-      showToast(ok ? "已複製事項文字。" : "複製失敗，請手動複製。");
+      showToast(
+        ok
+          ? normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Task text copied."
+            : "已複製事項文字。"
+          : normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Copy failed. Please copy manually."
+            : "複製失敗，請手動複製。",
+      );
     });
   }
 
@@ -3548,16 +4393,21 @@
       return "";
     }
     const isDone = task.status === "done";
+    const displayCategory = getCategoryDisplayName(task.category || getUiText("uncategorized")) || "-";
+    const displaySubcategory =
+      getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory) || "-";
+    const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
+    const displayDescription = getTaskDisplayField(task, "description") || task.description || "-";
     const lines = [];
-    lines.push("主分類：" + (task.category || "-"));
-    lines.push("子分類：" + (task.subcategory || "-"));
-    lines.push("事項：" + (task.title || "-"));
-    lines.push("填寫人：" + (task.owner || "-"));
+    lines.push(getUiText("taskCategoryLabel") + "：" + displayCategory);
+    lines.push(getUiText("taskSubcategoryLabel") + "：" + displaySubcategory);
+    lines.push(getUiText("taskTitleLabel") + "：" + displayTitle);
+    lines.push(getUiText("owner") + "：" + (task.owner || "-"));
     if (isDone) {
-      lines.push("完成人：" + (task.completedBy || "-"));
+      lines.push(getUiText("completedBy") + "：" + (task.completedBy || "-"));
     }
-    lines.push("時間：" + formatTimeRange(task));
-    lines.push("內容：" + (task.description || "-"));
+    lines.push(getUiText("time") + "：" + formatTimeRange(task));
+    lines.push(getUiText("content") + "：" + displayDescription);
     return lines.join("\n");
   }
 
@@ -3986,7 +4836,7 @@
     if ((startText || endText || rawEndDateText || allDay) && !startDateText) {
       return {
         ok: false,
-        message: "請先選擇開始日期。",
+        message: isEnglishUi() ? "Please select start date first." : "請先選擇開始日期。",
       };
     }
     if (!startDateText && !startText && !endText && !rawEndDateText) {
@@ -4004,13 +4854,13 @@
       if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
         return {
           ok: false,
-          message: "日期格式無效，請重新選擇。",
+          message: isEnglishUi() ? "Invalid date format." : "日期格式無效，請重新選擇。",
         };
       }
       if (endMs < startMs) {
         return {
           ok: false,
-          message: "結束日期不可早於開始日期。",
+          message: isEnglishUi() ? "End date cannot be earlier than start date." : "結束日期不可早於開始日期。",
         };
       }
       return {
@@ -4034,13 +4884,13 @@
     if (startText && Number.isNaN(startMs)) {
       return {
         ok: false,
-        message: "開始時間格式無效，請重新輸入。",
+        message: isEnglishUi() ? "Invalid start time format." : "開始時間格式無效，請重新輸入。",
       };
     }
     if (endText && Number.isNaN(endMs)) {
       return {
         ok: false,
-        message: "結束時間格式無效，請重新輸入。",
+        message: isEnglishUi() ? "Invalid end time format." : "結束時間格式無效，請重新輸入。",
       };
     }
 
@@ -4054,7 +4904,7 @@
     if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs < startMs) {
       return {
         ok: false,
-        message: "結束時間不可早於開始時間。",
+        message: isEnglishUi() ? "End time cannot be earlier than start time." : "結束時間不可早於開始時間。",
       };
     }
 
@@ -4162,19 +5012,35 @@
         const startDate = toDateKey(new Date(startAt));
         const endDate = toDateKey(new Date(endAt));
         if (startDate === endDate) {
-          return formatDateOnly(startAt) + " 全天";
+          return formatDateOnly(startAt) + " " + (isEnglishUi() ? "All Day" : "全天");
         }
-        return formatDateOnly(startAt) + " 至 " + formatDateOnly(endAt) + " 全天";
+        return (
+          formatDateOnly(startAt) +
+          " " +
+          (isEnglishUi() ? "to" : "至") +
+          " " +
+          formatDateOnly(endAt) +
+          " " +
+          (isEnglishUi() ? "All Day" : "全天")
+        );
       }
       const allDayBase = startAt || endAt;
-      return formatDateOnly(allDayBase) + " 全天";
+      return formatDateOnly(allDayBase) + " " + (isEnglishUi() ? "All Day" : "全天");
     }
     if (startAt && endAt) {
       const sameDate = toDateKey(new Date(startAt)) === toDateKey(new Date(endAt));
       if (sameDate) {
-        return formatDateOnly(startAt) + " " + formatTime(startAt, false) + " 至 " + formatTime(endAt, false);
+        return (
+          formatDateOnly(startAt) +
+          " " +
+          formatTime(startAt, false) +
+          " " +
+          (isEnglishUi() ? "to" : "至") +
+          " " +
+          formatTime(endAt, false)
+        );
       }
-      return formatDateTime(startAt) + " 至 " + formatDateTime(endAt);
+      return formatDateTime(startAt) + " " + (isEnglishUi() ? "to" : "至") + " " + formatDateTime(endAt);
     }
     if (startAt) {
       return formatDateTime(startAt);
@@ -4214,7 +5080,7 @@
 
   function formatTime(input, allDay) {
     if (allDay) {
-      return "全天";
+      return isEnglishUi() ? "All Day" : "全天";
     }
     if (!input) {
       return "--:--";
@@ -4233,7 +5099,7 @@
       return "--:--";
     }
     if (task.allDay) {
-      return "全天";
+      return isEnglishUi() ? "All Day" : "全天";
     }
     const startAt = getTaskStartAt(task);
     const endAt = getTaskEndAt(task);
@@ -4241,30 +5107,30 @@
       return "--:--";
     }
     if (startAt && endAt) {
-      return formatTime(startAt, false) + " 至 " + formatTime(endAt, false);
+      return formatTime(startAt, false) + " " + (isEnglishUi() ? "to" : "至") + " " + formatTime(endAt, false);
     }
     return formatTime(startAt || endAt, false);
   }
 
   function formatCountdown(input, allDay, isDone) {
     if (isDone) {
-      return "已完成";
+      return isEnglishUi() ? "Completed" : "已完成";
     }
     if (allDay) {
-      return "全天事項";
+      return isEnglishUi() ? "All-day task" : "全天事項";
     }
     if (!input) {
-      return "無時間";
+      return isEnglishUi() ? "No time" : "無時間";
     }
     const dueMs = input instanceof Date ? input.getTime() : new Date(input).getTime();
     if (Number.isNaN(dueMs)) {
-      return "無時間";
+      return isEnglishUi() ? "No time" : "無時間";
     }
     const diffSec = Math.floor((dueMs - Date.now()) / 1000);
     if (diffSec >= 0) {
-      return "剩餘 " + formatDuration(diffSec);
+      return (isEnglishUi() ? "Remaining " : "剩餘 ") + formatDuration(diffSec);
     }
-    return "逾時 " + formatDuration(Math.abs(diffSec));
+    return (isEnglishUi() ? "Overdue " : "逾時 ") + formatDuration(Math.abs(diffSec));
   }
 
   function formatDuration(totalSeconds) {
@@ -4277,7 +5143,7 @@
     const mm = String(minutes).padStart(2, "0");
     const ss = String(seconds).padStart(2, "0");
     if (days > 0) {
-      return days + "天 " + hh + ":" + mm + ":" + ss;
+      return isEnglishUi() ? days + "d " + hh + ":" + mm + ":" + ss : days + "天 " + hh + ":" + mm + ":" + ss;
     }
     return hh + ":" + mm + ":" + ss;
   }
