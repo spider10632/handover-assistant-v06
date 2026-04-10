@@ -157,6 +157,9 @@
       actionPin: "置頂",
       actionUnpin: "取消置頂",
       actionDelete: "刪除",
+      actionShowOriginal: "顯示原文",
+      actionShowTranslated: "顯示翻譯",
+      noTranslatedContent: "此內容目前無翻譯可切換。",
       owner: "填寫人",
       completedBy: "完成人",
       countdown: "倒數",
@@ -251,6 +254,9 @@
       actionPin: "Pin",
       actionUnpin: "Unpin",
       actionDelete: "Delete",
+      actionShowOriginal: "Show Original",
+      actionShowTranslated: "Show Translation",
+      noTranslatedContent: "No translated content available for this field.",
       owner: "Owner",
       completedBy: "Done by",
       countdown: "Countdown",
@@ -390,6 +396,7 @@
     cloudMutePush: false,
     cloudLastErrorAt: 0,
     deletedTaskIds: {},
+    showOriginalByTaskId: {},
     toastTimer: null,
     initialized: false,
   };
@@ -1288,6 +1295,65 @@
     return translated || original;
   }
 
+  function hasTranslatedDescriptionForCurrentLanguage(task) {
+    if (!task || typeof task !== "object") {
+      return false;
+    }
+    const original = String(task.description || "").trim();
+    if (!original) {
+      return false;
+    }
+    const translated = getTaskTranslatedField(task, "description", state.uiLanguage);
+    if (!translated) {
+      return false;
+    }
+    return translated !== original;
+  }
+
+  function isTaskShowingOriginalDescription(task) {
+    if (!task || !task.id) {
+      return false;
+    }
+    if (!hasTranslatedDescriptionForCurrentLanguage(task)) {
+      return false;
+    }
+    return Boolean(state.showOriginalByTaskId && state.showOriginalByTaskId[task.id]);
+  }
+
+  function getTaskDisplayDescription(task) {
+    if (!task || typeof task !== "object") {
+      return "";
+    }
+    const original = String(task.description || "").trim();
+    if (!original) {
+      return "";
+    }
+    if (isTaskShowingOriginalDescription(task)) {
+      return original;
+    }
+    const translated = getTaskTranslatedField(task, "description", state.uiLanguage);
+    return translated || original;
+  }
+
+  function toggleTaskOriginalDescription(task) {
+    if (!task || !task.id) {
+      return;
+    }
+    if (!hasTranslatedDescriptionForCurrentLanguage(task)) {
+      showToast(getUiText("noTranslatedContent"));
+      return;
+    }
+    if (!state.showOriginalByTaskId || typeof state.showOriginalByTaskId !== "object") {
+      state.showOriginalByTaskId = {};
+    }
+    if (state.showOriginalByTaskId[task.id]) {
+      delete state.showOriginalByTaskId[task.id];
+    } else {
+      state.showOriginalByTaskId[task.id] = true;
+    }
+    renderAll();
+  }
+
   async function requestCloudTranslations(targetLang, texts) {
     const target = normalizeUiLanguage(targetLang);
     const sourceList = (Array.isArray(texts) ? texts : [])
@@ -1693,6 +1759,7 @@
       return;
     }
     state.uiLanguage = nextLang;
+    state.showOriginalByTaskId = {};
     saveUiLanguage();
     applyUiLanguageToStatic();
     setupCategorySelectOptions();
@@ -2574,6 +2641,11 @@
       return;
     }
 
+    if (action === "original") {
+      toggleTaskOriginalDescription(task);
+      return;
+    }
+
     if (action === "pin") {
       task.pinned = !task.pinned;
       touchTask(task);
@@ -2603,6 +2675,9 @@
       state.tasks = state.tasks.filter(function (item) {
         return item.id !== taskId;
       });
+      if (state.showOriginalByTaskId && typeof state.showOriginalByTaskId === "object") {
+        delete state.showOriginalByTaskId[taskId];
+      }
       if (state.editingTaskId === taskId) {
         resetTaskForm();
       }
@@ -2814,7 +2889,10 @@
     const displayCategory = getCategoryDisplayName(task.category || getUiText("uncategorized"));
     const displaySubcategory = getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory);
     const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
-    const displayDescription = getTaskDisplayField(task, "description");
+    const displayDescription = getTaskDisplayDescription(task);
+    const canToggleOriginal = hasTranslatedDescriptionForCurrentLanguage(task);
+    const showingOriginal = isTaskShowingOriginalDescription(task);
+    const originalBtnText = showingOriginal ? getUiText("actionShowTranslated") : getUiText("actionShowOriginal");
     const completionText = isDone && task.completedBy ? " | " + getUiText("completedBy") + "：" + escapeHtml(task.completedBy) : "";
     const metaLineText =
       escapeHtml(displayCategory) +
@@ -2881,6 +2959,15 @@
       '">' +
       getUiText("actionCopy") +
       "</button>" +
+      '<button class="action-btn action-original' +
+      (showingOriginal ? " active" : "") +
+      '" type="button" data-action="original" data-id="' +
+      escapeHtml(task.id) +
+      '"' +
+      (canToggleOriginal ? "" : " disabled") +
+      ">" +
+      escapeHtml(originalBtnText) +
+      "</button>" +
       '<button class="action-btn action-cancel" type="button" data-action="cancel" data-id="' +
       escapeHtml(task.id) +
       '">' +
@@ -2915,7 +3002,10 @@
         const displaySubcategoryRaw = getTaskDisplayField(task, "subcategory") || task.subcategory;
         const displaySubcategory = getSubcategoryDisplayName(displaySubcategoryRaw);
         const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
-        const displayDescription = getTaskDisplayField(task, "description");
+        const displayDescription = getTaskDisplayDescription(task);
+        const canToggleOriginal = hasTranslatedDescriptionForCurrentLanguage(task);
+        const showingOriginal = isTaskShowingOriginalDescription(task);
+        const originalBtnText = showingOriginal ? getUiText("actionShowTranslated") : getUiText("actionShowOriginal");
         const completedByText = task.status === "done" && task.completedBy ? escapeHtml(task.completedBy) : "-";
         const subcategoryHtml = displaySubcategory
           ? escapeHtml(displaySubcategory)
@@ -2971,6 +3061,15 @@
           task.id +
           '">' +
           getUiText("actionCopy") +
+          "</button>" +
+          '<button class="action-btn action-original' +
+          (showingOriginal ? " active" : "") +
+          '" type="button" data-action="original" data-id="' +
+          task.id +
+          '"' +
+          (canToggleOriginal ? "" : " disabled") +
+          ">" +
+          escapeHtml(originalBtnText) +
           "</button>" +
           '<button class="action-btn action-pin" type="button" data-action="pin" data-id="' +
           task.id +
@@ -3051,7 +3150,7 @@
 
   function renderUpcomingItem(task, windowTag) {
     const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
-    const displayDescription = getTaskDisplayField(task, "description");
+    const displayDescription = getTaskDisplayDescription(task);
     const displaySubcategory = getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory);
     const detailText = displayDescription
       ? escapeHtml(displayDescription).replace(/\n/g, "<br>")
@@ -4422,7 +4521,7 @@
     const displaySubcategory =
       getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory) || "-";
     const displayTitle = getTaskDisplayField(task, "title") || task.title || "-";
-    const displayDescription = getTaskDisplayField(task, "description") || task.description || "-";
+    const displayDescription = getTaskDisplayDescription(task) || task.description || "-";
     const lines = [];
     lines.push(getUiText("taskCategoryLabel") + "：" + displayCategory);
     lines.push(getUiText("taskSubcategoryLabel") + "：" + displaySubcategory);

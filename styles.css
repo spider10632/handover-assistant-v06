@@ -873,6 +873,12 @@ td {
   cursor: pointer;
 }
 
+.action-btn:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+  filter: grayscale(18%);
+}
+
 .action-done {
   color: #114233;
   background: linear-gradient(120deg, #d3e9de, #c0dccf);
@@ -889,6 +895,18 @@ td {
   color: #3f532f;
   background: linear-gradient(120deg, #e1ecd4, #d2e1bd);
   border-color: rgba(63, 83, 47, 0.24);
+}
+
+.action-original {
+  color: #34424f;
+  background: linear-gradient(120deg, #e3eaf0, #d3dde6);
+  border-color: rgba(52, 66, 79, 0.24);
+}
+
+.action-original.active {
+  color: #163248;
+  background: linear-gradient(120deg, #d2e7fb, #bfd7f2);
+  border-color: rgba(22, 50, 72, 0.28);
 }
 
 .action-pin {
@@ -1139,6 +1157,7 @@ body.theme-mono .status-done {
 body.theme-mono .action-done,
 body.theme-mono .action-edit,
 body.theme-mono .action-copy,
+body.theme-mono .action-original,
 body.theme-mono .action-pin,
 body.theme-mono .action-delete,
 body.theme-mono .action-cancel {
