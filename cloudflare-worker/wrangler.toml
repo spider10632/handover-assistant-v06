@@ -4,7 +4,7 @@ compatibility_date = "2026-04-05"
 workers_dev = true
 
 [vars]
-ALLOWED_USERS = "caesarmetro"
+ALLOWED_USERS = "caesarmetro,test"
 
 [[d1_databases]]
 binding = "DB"
