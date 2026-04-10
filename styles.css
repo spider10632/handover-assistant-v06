@@ -897,6 +897,12 @@ td {
   border-color: rgba(63, 83, 47, 0.24);
 }
 
+.action-translate {
+  color: #3f4f21;
+  background: linear-gradient(120deg, #e9f0cf, #dae7b9);
+  border-color: rgba(63, 79, 33, 0.24);
+}
+
 .action-original {
   color: #34424f;
   background: linear-gradient(120deg, #e3eaf0, #d3dde6);
@@ -1157,6 +1163,7 @@ body.theme-mono .status-done {
 body.theme-mono .action-done,
 body.theme-mono .action-edit,
 body.theme-mono .action-copy,
+body.theme-mono .action-translate,
 body.theme-mono .action-original,
 body.theme-mono .action-pin,
 body.theme-mono .action-delete,

@@ -6,6 +6,7 @@ const MAX_TRANSLATE_ITEMS = 60;
 const MAX_TRANSLATE_TEXT_LENGTH = 2000;
 const TRANSLATE_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const TRANSLATE_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
+const TRANSLATE_PROVIDER_DEFAULT_ORDER = ["azure", "deepl", "google-cloud", "gemini", "google-public"];
 
 export default {
   async fetch(request, env) {
@@ -133,7 +134,7 @@ async function handlePutState(request, env, serverId, cors) {
 }
 
 async function handleTranslate(request, env, serverId, cors) {
-  if (!env || !env.GEMINI_API_KEY) {
+  if (!env) {
     return jsonResponse({ ok: false, error: "TRANSLATION_NOT_CONFIGURED" }, 503, cors);
   }
 
@@ -177,28 +178,38 @@ async function handleTranslate(request, env, serverId, cors) {
     );
   }
 
-  let translated;
-  let provider = "gemini";
-  try {
-    translated = await translateTextsWithGemini(env, targetLang, normalizedTexts);
-  } catch (error) {
-    try {
-      translated = await translateTextsWithGooglePublic(targetLang, normalizedTexts);
-      provider = "google-public-fallback";
-    } catch (fallbackError) {
-      return jsonResponse(
-        {
-          ok: false,
-          error: "TRANSLATION_FAILED",
-          message: String(error && error.message ? error.message : "translate failed"),
-          fallbackMessage: String(
-            fallbackError && fallbackError.message ? fallbackError.message : "fallback translate failed",
-          ),
-        },
-        502,
-        cors,
-      );
+  const order = buildTranslateProviderOrder(env);
+  const failures = [];
+  let translated = null;
+  let provider = "";
+
+  for (const providerName of order) {
+    if (!isTranslateProviderReady(providerName, env)) {
+      failures.push(providerName + ":NOT_CONFIGURED");
+      continue;
     }
+    try {
+      translated = await translateTextsByProvider(providerName, env, targetLang, normalizedTexts);
+      provider = providerName;
+      break;
+    } catch (error) {
+      const status = Number(error && error.status ? error.status : 0);
+      const message = String(error && error.message ? error.message : "translate failed");
+      failures.push(providerName + ":" + (status || "ERR") + ":" + message.slice(0, 220));
+    }
+  }
+
+  if (!translated || !provider) {
+    return jsonResponse(
+      {
+        ok: false,
+        error: "TRANSLATION_FAILED",
+        message: "all providers failed",
+        details: failures,
+      },
+      502,
+      cors,
+    );
   }
 
   return jsonResponse(
@@ -212,6 +223,56 @@ async function handleTranslate(request, env, serverId, cors) {
     200,
     cors,
   );
+}
+
+function buildTranslateProviderOrder(env) {
+  const configured = String(env.TRANSLATE_PROVIDER_ORDER || "")
+    .split(",")
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean);
+  const source = configured.length > 0 ? configured : TRANSLATE_PROVIDER_DEFAULT_ORDER;
+  const valid = source.filter((item) => {
+    return item === "azure" || item === "deepl" || item === "google-cloud" || item === "gemini" || item === "google-public";
+  });
+  return Array.from(new Set(valid.length > 0 ? valid : TRANSLATE_PROVIDER_DEFAULT_ORDER));
+}
+
+function isTranslateProviderReady(provider, env) {
+  if (provider === "azure") {
+    return Boolean(String(env.AZURE_TRANSLATOR_KEY || "").trim());
+  }
+  if (provider === "deepl") {
+    return Boolean(String(env.DEEPL_API_KEY || "").trim());
+  }
+  if (provider === "google-cloud") {
+    return Boolean(String(env.GOOGLE_TRANSLATE_API_KEY || "").trim());
+  }
+  if (provider === "gemini") {
+    return Boolean(String(env.GEMINI_API_KEY || "").trim());
+  }
+  if (provider === "google-public") {
+    return true;
+  }
+  return false;
+}
+
+async function translateTextsByProvider(provider, env, targetLang, texts) {
+  if (provider === "azure") {
+    return translateTextsWithAzure(env, targetLang, texts);
+  }
+  if (provider === "deepl") {
+    return translateTextsWithDeepL(env, targetLang, texts);
+  }
+  if (provider === "google-cloud") {
+    return translateTextsWithGoogleCloud(env, targetLang, texts);
+  }
+  if (provider === "gemini") {
+    return translateTextsWithGemini(env, targetLang, texts);
+  }
+  if (provider === "google-public") {
+    return translateTextsWithGooglePublic(targetLang, texts);
+  }
+  throw new Error("unknown provider: " + provider);
 }
 
 function parseAllowedUsers(raw) {
@@ -391,6 +452,159 @@ function parseJsonLoose(raw) {
   return null;
 }
 
+async function runTranslateWithRetries(jobName, handler) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await handler(attempt);
+    } catch (error) {
+      lastError = error;
+      const status = Number(error && error.status ? error.status : 0);
+      if (attempt >= 3 || !TRANSLATE_RETRY_STATUSES.has(status)) {
+        break;
+      }
+      await sleep(250 * attempt * attempt);
+    }
+  }
+  const detail = String(lastError && lastError.message ? lastError.message : "translate failed");
+  throw new Error(jobName + " failed: " + detail);
+}
+
+function normalizeProviderTranslatedList(translations, sourceTexts) {
+  const source = Array.isArray(sourceTexts) ? sourceTexts : [];
+  const list = Array.isArray(translations) ? translations : [];
+  if (list.length !== source.length) {
+    throw new Error("translation length mismatch");
+  }
+  return list.map((item, index) => {
+    const value = String(item == null ? "" : item).trim();
+    return value || String(source[index] || "");
+  });
+}
+
+async function translateTextsWithAzure(env, targetLang, texts) {
+  const key = String(env.AZURE_TRANSLATOR_KEY || "").trim();
+  if (!key) {
+    throw new Error("azure key missing");
+  }
+  const region = String(env.AZURE_TRANSLATOR_REGION || "").trim();
+  const endpointBase = String(env.AZURE_TRANSLATOR_ENDPOINT || "https://api.cognitive.microsofttranslator.com").trim();
+  const endpoint =
+    endpointBase.replace(/\/+$/, "") +
+    "/translate?api-version=3.0&to=" +
+    encodeURIComponent(targetLang === "zh" ? "zh-Hant" : "en");
+
+  return runTranslateWithRetries("azure", async () => {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "ocp-apim-subscription-key": key,
+        ...(region ? { "ocp-apim-subscription-region": region } : {}),
+      },
+      body: JSON.stringify(
+        texts.map((text) => {
+          return { Text: String(text || "") };
+        }),
+      ),
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      const error = new Error("azure http " + response.status + " " + detail);
+      error.status = response.status;
+      throw error;
+    }
+    const payload = await response.json();
+    if (!Array.isArray(payload)) {
+      throw new Error("azure invalid response");
+    }
+    const translated = payload.map((item) => {
+      const list = item && Array.isArray(item.translations) ? item.translations : [];
+      const first = list[0];
+      return first && typeof first.text === "string" ? first.text : "";
+    });
+    return normalizeProviderTranslatedList(translated, texts);
+  });
+}
+
+async function translateTextsWithDeepL(env, targetLang, texts) {
+  const key = String(env.DEEPL_API_KEY || "").trim();
+  if (!key) {
+    throw new Error("deepl key missing");
+  }
+  const endpoint = String(env.DEEPL_API_URL || "https://api-free.deepl.com/v2/translate").trim();
+  const target = targetLang === "zh" ? "ZH" : "EN";
+
+  return runTranslateWithRetries("deepl", async () => {
+    const body = new URLSearchParams();
+    body.set("target_lang", target);
+    for (const text of texts) {
+      body.append("text", String(text || ""));
+    }
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: "DeepL-Auth-Key " + key,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      const error = new Error("deepl http " + response.status + " " + detail);
+      error.status = response.status;
+      throw error;
+    }
+    const payload = await response.json();
+    const list = payload && Array.isArray(payload.translations) ? payload.translations : [];
+    const translated = list.map((item) => {
+      return item && typeof item.text === "string" ? item.text : "";
+    });
+    return normalizeProviderTranslatedList(translated, texts);
+  });
+}
+
+async function translateTextsWithGoogleCloud(env, targetLang, texts) {
+  const key = String(env.GOOGLE_TRANSLATE_API_KEY || "").trim();
+  if (!key) {
+    throw new Error("google cloud key missing");
+  }
+  const endpoint = "https://translation.googleapis.com/language/translate/v2?key=" + encodeURIComponent(key);
+  const target = normalizeUiTargetLang(targetLang);
+
+  return runTranslateWithRetries("google-cloud", async () => {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        q: texts,
+        target,
+        format: "text",
+      }),
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      const error = new Error("google cloud http " + response.status + " " + detail);
+      error.status = response.status;
+      throw error;
+    }
+    const payload = await response.json();
+    const list =
+      payload &&
+      payload.data &&
+      Array.isArray(payload.data.translations)
+        ? payload.data.translations
+        : [];
+    const translated = list.map((item) => {
+      return decodeHtmlEntity(String(item && item.translatedText ? item.translatedText : ""));
+    });
+    return normalizeProviderTranslatedList(translated, texts);
+  });
+}
+
 async function translateTextsWithGooglePublic(targetLang, texts) {
   const tl = normalizeUiTargetLang(targetLang);
   const results = [];
@@ -428,6 +642,20 @@ function normalizeUiTargetLang(targetLang) {
     return "zh-TW";
   }
   return "en";
+}
+
+function decodeHtmlEntity(input) {
+  const text = String(input || "");
+  if (!text.includes("&")) {
+    return text;
+  }
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x2F;/g, "/");
 }
 
 function extractGooglePublicTranslatedText(payload) {

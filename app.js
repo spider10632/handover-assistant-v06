@@ -33,7 +33,6 @@
   const BACKUP_VERSION = "0.95";
   const UI_LANGUAGE_STORAGE_KEY = "handover_ui_language_v1";
   const DEFAULT_UI_LANGUAGE = "zh";
-  const TRANSLATE_BATCH_SIZE = 30;
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const TOAST_MS = 3000;
@@ -157,6 +156,8 @@
       actionPin: "置頂",
       actionUnpin: "取消置頂",
       actionDelete: "刪除",
+      actionTranslateTask: "翻譯此筆",
+      actionTranslating: "翻譯中...",
       actionShowOriginal: "顯示原文",
       actionShowTranslated: "顯示翻譯",
       noTranslatedContent: "此內容目前無翻譯可切換。",
@@ -254,6 +255,8 @@
       actionPin: "Pin",
       actionUnpin: "Unpin",
       actionDelete: "Delete",
+      actionTranslateTask: "Translate This",
+      actionTranslating: "Translating...",
       actionShowOriginal: "Show Original",
       actionShowTranslated: "Show Translation",
       noTranslatedContent: "No translated content available for this field.",
@@ -397,6 +400,7 @@
     cloudLastErrorAt: 0,
     deletedTaskIds: {},
     showOriginalByTaskId: {},
+    translatingTaskIds: {},
     toastTimer: null,
     initialized: false,
   };
@@ -454,36 +458,13 @@
     updateFormLockState();
     setDefaultDueTime();
     renderTodayOverviewBar();
-    const activeLang = normalizeUiLanguage(state.uiLanguage);
     const startRuntime = function () {
       startReminderLoop();
       startCountdownLoop();
       initCloudSync();
     };
-
-    if (activeLang === "en") {
-      ensureTaskTranslationsForLanguage(activeLang)
-        .catch(function (error) {
-          console.error("initial translation warmup error", error);
-        })
-        .finally(function () {
-          renderAll();
-          startRuntime();
-        });
-      return;
-    }
-
     renderAll();
     startRuntime();
-    ensureTaskTranslationsForLanguage(activeLang)
-      .then(function (changed) {
-        if (changed) {
-          renderAll();
-        }
-      })
-      .catch(function (error) {
-        console.error("initial translation warmup error", error);
-      });
   }
 
   function initAccessGate() {
@@ -1288,6 +1269,9 @@
     if (!task || !field) {
       return "";
     }
+    if (field !== "description") {
+      return "";
+    }
     const normalizedLang = normalizeUiLanguage(lang);
     const translations = task.translations && typeof task.translations === "object" ? task.translations : null;
     if (!translations) {
@@ -1464,109 +1448,174 @@
     });
   }
 
-  async function ensureTaskTranslationsForLanguage(targetLang) {
+  function ensureTaskTranslationContainer(task) {
+    if (!task || typeof task !== "object") {
+      return;
+    }
+    if (!task.translations || typeof task.translations !== "object" || Array.isArray(task.translations)) {
+      task.translations = {};
+    }
+  }
+
+  function setTaskTranslationEntry(task, targetLang, descriptionValue) {
+    if (!task || typeof task !== "object") {
+      return;
+    }
     const target = normalizeUiLanguage(targetLang);
-    const tasks = Array.isArray(state.tasks) ? state.tasks : [];
-    if (tasks.length === 0) {
+    ensureTaskTranslationContainer(task);
+    task.translations[target] = {
+      title: String(task.title || "").trim(),
+      description: String(descriptionValue == null ? task.description : descriptionValue).trim(),
+      subcategory: String(task.subcategory || "").trim(),
+      _sig: getTaskTranslationSignature(task),
+    };
+  }
+
+  function hasTaskTranslationCacheForLanguage(task, targetLang) {
+    if (!task || typeof task !== "object") {
+      return false;
+    }
+    const target = normalizeUiLanguage(targetLang);
+    const entry =
+      task.translations && typeof task.translations === "object" && !Array.isArray(task.translations)
+        ? task.translations[target]
+        : null;
+    if (!entry || typeof entry !== "object") {
+      return false;
+    }
+    if (String(entry._sig || "") !== getTaskTranslationSignature(task)) {
+      return false;
+    }
+    return isTaskTranslationUsable(task, entry, target);
+  }
+
+  function canTaskTranslateForLanguage(task, targetLang) {
+    if (!task || typeof task !== "object") {
+      return false;
+    }
+    const source = String(task.description || "").trim();
+    if (!source) {
+      return false;
+    }
+    return shouldTranslateTextForTarget(source, normalizeUiLanguage(targetLang));
+  }
+
+  function needsTaskManualTranslationForLanguage(task, targetLang) {
+    return canTaskTranslateForLanguage(task, targetLang) && !hasTaskTranslationCacheForLanguage(task, targetLang);
+  }
+
+  function isTaskTranslationInProgress(taskId) {
+    const id = String(taskId || "").trim();
+    if (!id) {
+      return false;
+    }
+    return Boolean(state.translatingTaskIds && state.translatingTaskIds[id]);
+  }
+
+  function setTaskTranslationInProgress(taskId, inProgress) {
+    const id = String(taskId || "").trim();
+    if (!id) {
+      return;
+    }
+    if (!state.translatingTaskIds || typeof state.translatingTaskIds !== "object") {
+      state.translatingTaskIds = {};
+    }
+    if (inProgress) {
+      state.translatingTaskIds[id] = true;
+      return;
+    }
+    delete state.translatingTaskIds[id];
+  }
+
+  async function translateTaskDescriptionForLanguage(task, targetLang, options) {
+    if (!task || typeof task !== "object") {
+      return false;
+    }
+    const opts = options && typeof options === "object" ? options : {};
+    const target = normalizeUiLanguage(targetLang);
+    const source = String(task.description || "").trim();
+
+    if (!source) {
+      setTaskTranslationEntry(task, target, "");
+      return true;
+    }
+
+    if (!shouldTranslateTextForTarget(source, target)) {
+      setTaskTranslationEntry(task, target, source);
+      return true;
+    }
+
+    if (!opts.force && hasTaskTranslationCacheForLanguage(task, target)) {
       return false;
     }
 
-    const jobs = [];
-    let changedWithoutApi = false;
-    tasks.forEach(function (task) {
-      const sig = getTaskTranslationSignature(task);
-      if (!task.translations || typeof task.translations !== "object" || Array.isArray(task.translations)) {
-        task.translations = {};
-      }
-      const existing = task.translations[target];
-      if (
-        existing &&
-        typeof existing === "object" &&
-        String(existing._sig || "") === sig &&
-        isTaskTranslationUsable(task, existing, target)
-      ) {
-        return;
-      }
-      const description = String(task.description || "").trim();
-      const hasAnyNeed = shouldTranslateTextForTarget(description, target);
-      if (!hasAnyNeed) {
-        task.translations[target] = {
-          title: String(task.title || "").trim(),
-          description: description,
-          subcategory: String(task.subcategory || "").trim(),
-          _sig: sig,
-        };
-        changedWithoutApi = true;
-        return;
-      }
-      jobs.push({
-        task: task,
-        sig: sig,
-        description: description,
-      });
-    });
-
-    if (jobs.length === 0) {
-      if (changedWithoutApi) {
-        saveTasks();
-      }
-      return changedWithoutApi;
+    const translatedList = await requestCloudTranslations(target, [source]);
+    const translated = String((translatedList && translatedList[0]) || "").trim();
+    if (!translated || translated === source) {
+      throw new Error("TRANSLATION_EMPTY_OR_UNCHANGED");
     }
+    setTaskTranslationEntry(task, target, translated);
+    return true;
+  }
 
-    const uniqueTexts = [];
-    const uniqueMap = new Map();
-    jobs.forEach(function (job) {
-      const value = String(job.description || "").trim();
-      if (!value || !shouldTranslateTextForTarget(value, target)) {
-        return;
-      }
-      if (uniqueMap.has(value)) {
-        return;
-      }
-      uniqueMap.set(value, uniqueTexts.length);
-      uniqueTexts.push(value);
-    });
+  async function cacheTaskTranslationsOnSave(task) {
+    if (!task || typeof task !== "object") {
+      return { changed: false, hasError: false };
+    }
+    let changed = false;
+    let hasError = false;
+    const targets = ["zh", "en"];
 
-    const translatedMap = new Map();
-    if (uniqueTexts.length > 0) {
+    for (const target of targets) {
       try {
-        for (let i = 0; i < uniqueTexts.length; i += TRANSLATE_BATCH_SIZE) {
-          const chunk = uniqueTexts.slice(i, i + TRANSLATE_BATCH_SIZE);
-          const translatedChunk = await requestCloudTranslations(target, chunk);
-          chunk.forEach(function (source, index) {
-            translatedMap.set(source, translatedChunk[index] || source);
-          });
+        const updated = await translateTaskDescriptionForLanguage(task, target, { force: true });
+        if (updated) {
+          changed = true;
         }
       } catch (error) {
-        console.error("ensureTaskTranslationsForLanguage error", error);
-        if (Date.now() - state.cloudLastErrorAt > 10000) {
-          state.cloudLastErrorAt = Date.now();
-          showToast(
-            target === "en"
-              ? "Translation unavailable. Showing original text."
-              : "翻譯暫時失敗，先顯示原文。",
-          );
-        }
-        return false;
+        hasError = true;
+        console.error("cacheTaskTranslationsOnSave error", target, error);
       }
     }
 
-    jobs.forEach(function (job) {
-      const description =
-        job.description && shouldTranslateTextForTarget(job.description, target)
-          ? translatedMap.get(job.description) || job.description
-          : job.description;
+    return { changed, hasError };
+  }
 
-      job.task.translations[target] = {
-        title: String(job.task.title || "").trim(),
-        description: String(description || "").trim(),
-        subcategory: String(job.task.subcategory || "").trim(),
-        _sig: job.sig,
-      };
-    });
+  async function handleTranslateSingleTask(task) {
+    if (!task || !task.id) {
+      return;
+    }
+    const target = normalizeUiLanguage(state.uiLanguage);
+    if (!needsTaskManualTranslationForLanguage(task, target)) {
+      showToast(
+        target === "en" ? "This item has no pending translation request." : "此筆目前不需要手動翻譯。",
+      );
+      return;
+    }
+    if (isTaskTranslationInProgress(task.id)) {
+      return;
+    }
 
-    saveTasks();
-    return true;
+    setTaskTranslationInProgress(task.id, true);
+    renderAll();
+
+    try {
+      await translateTaskDescriptionForLanguage(task, target, { force: true });
+      touchTask(task);
+      saveTasks();
+      renderAll();
+      showToast(target === "en" ? "Translated and cached." : "已翻譯並寫入快取。");
+    } catch (error) {
+      console.error("handleTranslateSingleTask error", error);
+      showToast(
+        target === "en"
+          ? "Translation failed. Try again later."
+          : "翻譯失敗，請稍後再試。",
+      );
+    } finally {
+      setTaskTranslationInProgress(task.id, false);
+      renderAll();
+    }
   }
 
   function handlePasswordSubmit(event) {
@@ -1781,7 +1830,7 @@
     });
   }
 
-  async function handleUiLanguageChange() {
+  function handleUiLanguageChange() {
     const nextLang = normalizeUiLanguage(els.uiLanguageSelect ? els.uiLanguageSelect.value : state.uiLanguage);
     if (nextLang === normalizeUiLanguage(state.uiLanguage)) {
       return;
@@ -1794,7 +1843,6 @@
     updateSubcategoryOptions();
     updateFormLockState();
     renderTodayOverviewBar();
-    await ensureTaskTranslationsForLanguage(nextLang);
     renderAll();
   }
 
@@ -2453,7 +2501,7 @@
     };
   }
 
-  function handleAddTask(event) {
+  async function handleAddTask(event) {
     event.preventDefault();
 
     if (!isCategorySelectionReady()) {
@@ -2497,12 +2545,18 @@
         resetTaskForm();
         return;
       }
+      const previousDescription = String(task.description || "").trim();
       task.category = category;
       task.subcategory = normalizedSubcategory;
       task.title = title;
       task.owner = owner;
       task.description = description;
-      task.translations = {};
+      const noteChanged = previousDescription !== description;
+      let translateResult = { changed: false, hasError: false };
+      if (noteChanged) {
+        task.translations = {};
+        translateResult = await cacheTaskTranslationsOnSave(task);
+      }
       task.startAt = range.startAtIso;
       task.endAt = range.endAtIso;
       task.dueAt = range.startAtIso;
@@ -2516,12 +2570,20 @@
       saveTasks();
       renderAll();
       resetTaskForm();
-      showToast(isEnglishUi() ? "Task updated." : "待辦已修改。");
+      showToast(
+        translateResult.hasError
+          ? isEnglishUi()
+            ? 'Task updated. Translation may be incomplete, use "Translate This".'
+            : "待辦已修改，翻譯若未完成可按「翻譯此筆」。"
+          : isEnglishUi()
+            ? "Task updated."
+            : "待辦已修改。",
+      );
       return;
     }
 
     const nowIso = new Date().toISOString();
-    state.tasks.push({
+    const newTask = {
       id: buildId(),
       category: category,
       subcategory: normalizedSubcategory,
@@ -2539,13 +2601,23 @@
       remindedAt: null,
       createdAt: nowIso,
       updatedAt: nowIso,
-    });
+    };
+    const translateResult = await cacheTaskTranslationsOnSave(newTask);
+    state.tasks.push(newTask);
 
     state.tasks.sort(sortByDueTime);
     saveTasks();
     renderAll();
     resetTaskForm();
-    showToast(isEnglishUi() ? "Task added." : "待辦已新增。");
+    showToast(
+      translateResult.hasError
+        ? isEnglishUi()
+          ? 'Task added. Translation may be incomplete, use "Translate This".'
+          : "待辦已新增，翻譯若未完成可按「翻譯此筆」。"
+        : isEnglishUi()
+          ? "Task added."
+          : "待辦已新增。",
+    );
   }
 
   function applyDateQuery() {
@@ -2609,7 +2681,7 @@
     runTaskAction(action, taskId);
   }
 
-  function runTaskAction(rawAction, taskId) {
+  async function runTaskAction(rawAction, taskId) {
     const action = rawAction === "cancel" ? "delete" : rawAction;
     if (!action || !taskId) {
       return;
@@ -2673,6 +2745,11 @@
       return;
     }
 
+    if (action === "translate") {
+      await handleTranslateSingleTask(task);
+      return;
+    }
+
     if (action === "pin") {
       task.pinned = !task.pinned;
       touchTask(task);
@@ -2704,6 +2781,9 @@
       });
       if (state.showOriginalByTaskId && typeof state.showOriginalByTaskId === "object") {
         delete state.showOriginalByTaskId[taskId];
+      }
+      if (state.translatingTaskIds && typeof state.translatingTaskIds === "object") {
+        delete state.translatingTaskIds[taskId];
       }
       if (state.editingTaskId === taskId) {
         resetTaskForm();
@@ -2919,7 +2999,10 @@
     const displayDescription = getTaskDisplayDescription(task);
     const canToggleOriginal = hasTranslatedDescriptionForCurrentLanguage(task);
     const showingOriginal = isTaskShowingOriginalDescription(task);
+    const translationBusy = isTaskTranslationInProgress(task.id);
+    const needsManualTranslate = needsTaskManualTranslationForLanguage(task, state.uiLanguage);
     const originalBtnText = showingOriginal ? getUiText("actionShowTranslated") : getUiText("actionShowOriginal");
+    const translateBtnText = translationBusy ? getUiText("actionTranslating") : getUiText("actionTranslateTask");
     const completionText = isDone && task.completedBy ? " | " + getUiText("completedBy") + "：" + escapeHtml(task.completedBy) : "";
     const metaLineText =
       escapeHtml(displayCategory) +
@@ -2986,6 +3069,15 @@
       '">' +
       getUiText("actionCopy") +
       "</button>" +
+      (translationBusy || needsManualTranslate
+        ? '<button class="action-btn action-translate" type="button" data-action="translate" data-id="' +
+          escapeHtml(task.id) +
+          '"' +
+          (translationBusy ? " disabled" : "") +
+          ">" +
+          escapeHtml(translateBtnText) +
+          "</button>"
+        : "") +
       '<button class="action-btn action-original' +
       (showingOriginal ? " active" : "") +
       '" type="button" data-action="original" data-id="' +
@@ -3032,7 +3124,10 @@
         const displayDescription = getTaskDisplayDescription(task);
         const canToggleOriginal = hasTranslatedDescriptionForCurrentLanguage(task);
         const showingOriginal = isTaskShowingOriginalDescription(task);
+        const translationBusy = isTaskTranslationInProgress(task.id);
+        const needsManualTranslate = needsTaskManualTranslationForLanguage(task, state.uiLanguage);
         const originalBtnText = showingOriginal ? getUiText("actionShowTranslated") : getUiText("actionShowOriginal");
+        const translateBtnText = translationBusy ? getUiText("actionTranslating") : getUiText("actionTranslateTask");
         const completedByText = task.status === "done" && task.completedBy ? escapeHtml(task.completedBy) : "-";
         const subcategoryHtml = displaySubcategory
           ? escapeHtml(displaySubcategory)
@@ -3089,6 +3184,15 @@
           '">' +
           getUiText("actionCopy") +
           "</button>" +
+          (translationBusy || needsManualTranslate
+            ? '<button class="action-btn action-translate" type="button" data-action="translate" data-id="' +
+              task.id +
+              '"' +
+              (translationBusy ? " disabled" : "") +
+              ">" +
+              escapeHtml(translateBtnText) +
+              "</button>"
+            : "") +
           '<button class="action-btn action-original' +
           (showingOriginal ? " active" : "") +
           '" type="button" data-action="original" data-id="' +
@@ -3798,6 +3902,7 @@
     state.tasks = imported.tasks;
     state.todayOverview = imported.todayOverview;
     state.deletedTaskIds = normalizedImportedDeleted;
+    state.translatingTaskIds = {};
     if (state.editingTaskId && !silent) {
       resetTaskForm();
     }
@@ -3805,18 +3910,7 @@
     saveDeletedTaskIds();
     saveTodayOverview();
     renderTodayOverviewBar();
-    const activeLang = normalizeUiLanguage(state.uiLanguage);
-    if (activeLang === "en") {
-      ensureTaskTranslationsForLanguage(activeLang)
-        .catch(function (error) {
-          console.error("applyImportedBackup translation error", error);
-        })
-        .finally(function () {
-          renderAll();
-        });
-    } else {
-      renderAll();
-    }
+    renderAll();
     if (!silent) {
       showToast("已讀取資料，共 " + state.tasks.length + " 筆。");
     }
