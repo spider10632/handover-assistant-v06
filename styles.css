@@ -576,8 +576,15 @@ textarea {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
+}
+
+.today-pinned-list {
+  grid-template-columns: 1fr;
+}
+
+.today-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .today-pinned-empty,
@@ -1354,7 +1361,6 @@ body.theme-mono .upcoming-empty {
     min-width: 920px;
   }
 
-  .today-pinned-list,
   .today-list {
     grid-template-columns: 1fr;
   }
@@ -1432,9 +1438,9 @@ body.theme-mono .upcoming-empty {
 
   .today-pinned-zone {
     margin: 0 0 12px;
-    padding: 0;
-    border: 0;
-    background: transparent;
+    padding: 11px;
+    border: 1px solid rgba(209, 197, 180, 0.24);
+    background: #fff;
   }
 
   .today-pinned-list {
