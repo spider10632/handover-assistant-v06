@@ -1432,19 +1432,43 @@ body.theme-mono .upcoming-empty {
     width: 100%;
   }
 
-  .due-input-row .all-day-btn {
+  .due-input-row {
+    grid-template-columns: minmax(0, 1fr) 108px;
+    gap: 8px;
+    min-width: 0;
     width: 100%;
-    grid-column: 1 / -1;
+    overflow: hidden;
+  }
+
+  .due-input-row > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #task-start-date {
+    grid-column: 1;
+  }
+
+  #task-start-at {
+    grid-column: 2;
+  }
+
+  #task-end-date {
+    grid-column: 1;
+  }
+
+  #task-end-at {
+    grid-column: 2;
   }
 
   .due-input-row input {
     width: 100%;
-    grid-column: 1 / -1;
+    max-width: 100%;
   }
 
-  .due-input-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
+  .due-input-row .all-day-btn {
+    width: 100%;
+    grid-column: 1 / -1;
   }
 
   #task-start-date,
