@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>交接後台管理</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fbf9f4;
+        --panel: #ffffff;
+        --border: #d8cebf;
+        --text: #1b1c19;
+        --muted: #6e6659;
+        --gold: #c5a059;
+        --gold-deep: #a57f3a;
+        --danger: #9f4a4a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Manrope", "Noto Sans TC", sans-serif;
+        background: linear-gradient(160deg, #f5f2ea, #fbf9f4 40%, #f8f5ee);
+        color: var(--text);
+      }
+      .wrap {
+        width: min(1180px, 96vw);
+        margin: 24px auto 40px;
+      }
+      h1,
+      h2 {
+        margin: 0;
+        font-family: "Noto Serif TC", serif;
+        letter-spacing: 0.02em;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px;
+        box-shadow: 0 8px 24px rgba(35, 28, 16, 0.04);
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+      .grid.main {
+        grid-template-columns: 1fr;
+      }
+      .grid.two {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      input,
+      select,
+      button,
+      textarea {
+        font: inherit;
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: #fbfaf7;
+      }
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--gold);
+        box-shadow: 0 0 0 2px rgba(197, 160, 89, 0.18);
+      }
+      .btn {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 8px 14px;
+        background: #f3f0e9;
+        color: #463619;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .btn.primary {
+        background: linear-gradient(120deg, #c5a059, #b79048);
+        border-color: #ad8945;
+        color: #fff;
+      }
+      .btn.danger {
+        border-color: rgba(159, 74, 74, 0.4);
+        color: var(--danger);
+        background: #f7eeee;
+      }
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .toolbar {
+        justify-content: space-between;
+      }
+      .status {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .status.error {
+        color: var(--danger);
+      }
+      .status.ok {
+        color: #2f6b44;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #e9e2d5;
+        text-align: left;
+        padding: 10px 8px;
+        vertical-align: middle;
+        font-size: 14px;
+      }
+      th {
+        color: #64563b;
+        background: #fbf8f1;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 4px 10px;
+        background: rgba(197, 160, 89, 0.14);
+        border: 1px solid rgba(197, 160, 89, 0.42);
+        color: #6b4f17;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @media (max-width: 820px) {
+        .wrap {
+          width: min(1120px, 94vw);
+        }
+        th,
+        td {
+          font-size: 13px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap grid main">
+      <section class="card grid" id="login-card">
+        <h1>交接後台管理</h1>
+        <p class="status">登入後可管理帳號與查看操作紀錄（僅 `admin` 可用）。</p>
+        <div class="grid two">
+          <label>
+            伺服器
+            <input id="login-server" type="text" value="test" />
+          </label>
+          <label>
+            密碼
+            <input id="login-password" type="password" />
+          </label>
+        </div>
+        <div class="row">
+          <button id="login-btn" class="btn primary" type="button">登入</button>
+          <span id="login-status" class="status"></span>
+        </div>
+      </section>
+
+      <section class="card hidden" id="admin-app">
+        <div class="row toolbar">
+          <h2>帳號管理</h2>
+          <div class="row">
+            <span class="badge">Server: <span id="meta-server" class="mono" style="margin-left: 6px">-</span></span>
+            <span class="badge">Admin: <span id="meta-user" class="mono" style="margin-left: 6px">-</span></span>
+            <button id="logout-btn" class="btn" type="button">登出</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 14px; background: #fdfbf7">
+          <h2 style="margin-bottom: 10px">新增帳號</h2>
+          <div class="grid two">
+            <label>
+              帳號（英數、-、_）
+              <input id="new-username" type="text" />
+            </label>
+            <label>
+              密碼
+              <input id="new-password" type="password" />
+            </label>
+            <label>
+              角色
+              <select id="new-role">
+                <option value="staff">staff</option>
+                <option value="manager">manager</option>
+                <option value="admin">admin</option>
+              </select>
+            </label>
+          </div>
+          <div class="row" style="margin-top: 10px">
+            <button id="create-btn" class="btn primary" type="button">新增帳號</button>
+            <span id="create-status" class="status"></span>
+          </div>
+        </div>
+
+        <div class="row toolbar" style="margin-top: 16px">
+          <h2>帳號列表</h2>
+          <button id="refresh-accounts-btn" class="btn" type="button">重新整理</button>
+        </div>
+        <div style="overflow: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>帳號</th>
+                <th>角色</th>
+                <th>啟用</th>
+                <th>重設密碼</th>
+                <th>更新</th>
+                <th>刪除</th>
+              </tr>
+            </thead>
+            <tbody id="accounts-body"></tbody>
+          </table>
+        </div>
+
+        <div class="row toolbar" style="margin-top: 16px">
+          <h2>操作紀錄</h2>
+          <button id="refresh-audit-btn" class="btn" type="button">重新整理</button>
+        </div>
+        <div style="overflow: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>時間</th>
+                <th>人員</th>
+                <th>角色</th>
+                <th>動作</th>
+                <th>目標</th>
+                <th>摘要</th>
+              </tr>
+            </thead>
+            <tbody id="audit-body"></tbody>
+          </table>
+        </div>
+        <p id="admin-status" class="status" style="margin-top: 10px"></p>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        "use strict";
+
+        const API_BASE =
+          (typeof window !== "undefined" && typeof window.HANDOVER_CLOUD_API_BASE === "string"
+            ? window.HANDOVER_CLOUD_API_BASE
+            : "https://handover-cloud-api.spider10632.workers.dev"
+          ).replace(/\/+$/, "");
+
+        const state = {
+          token: "",
+          serverId: "",
+          username: "",
+        };
+
+        const els = {
+          loginCard: document.getElementById("login-card"),
+          loginServer: document.getElementById("login-server"),
+          loginPassword: document.getElementById("login-password"),
+          loginBtn: document.getElementById("login-btn"),
+          loginStatus: document.getElementById("login-status"),
+          adminApp: document.getElementById("admin-app"),
+          metaServer: document.getElementById("meta-server"),
+          metaUser: document.getElementById("meta-user"),
+          logoutBtn: document.getElementById("logout-btn"),
+          newUsername: document.getElementById("new-username"),
+          newPassword: document.getElementById("new-password"),
+          newRole: document.getElementById("new-role"),
+          createBtn: document.getElementById("create-btn"),
+          createStatus: document.getElementById("create-status"),
+          refreshAccountsBtn: document.getElementById("refresh-accounts-btn"),
+          accountsBody: document.getElementById("accounts-body"),
+          refreshAuditBtn: document.getElementById("refresh-audit-btn"),
+          auditBody: document.getElementById("audit-body"),
+          adminStatus: document.getElementById("admin-status"),
+        };
+
+        els.loginBtn.addEventListener("click", onLogin);
+        els.logoutBtn.addEventListener("click", onLogout);
+        els.createBtn.addEventListener("click", onCreateAccount);
+        els.refreshAccountsBtn.addEventListener("click", loadAccounts);
+        els.refreshAuditBtn.addEventListener("click", loadAudit);
+        els.accountsBody.addEventListener("click", onAccountAction);
+
+        async function onLogin() {
+          setStatus(els.loginStatus, "登入中...");
+          const serverId = normalizeName(els.loginServer.value);
+          const password = String(els.loginPassword.value || "");
+          if (!serverId || !password) {
+            setStatus(els.loginStatus, "請輸入伺服器與密碼", true);
+            return;
+          }
+          try {
+            const result = await apiFetch("/v2/auth/login", {
+              method: "POST",
+              body: {
+                serverId,
+                password,
+              },
+            });
+            if (!result.ok || !result.token) {
+              throw new Error(result.error || "LOGIN_FAILED");
+            }
+            if (String(result.role || "") !== "admin") {
+              throw new Error("FORBIDDEN_ROLE");
+            }
+
+            state.token = String(result.token || "");
+            state.serverId = String(result.serverId || serverId);
+            state.username = String(result.username || "");
+
+            els.metaServer.textContent = state.serverId;
+            els.metaUser.textContent = state.username;
+            els.loginCard.classList.add("hidden");
+            els.adminApp.classList.remove("hidden");
+            setStatus(els.adminStatus, "登入成功，可開始管理帳號。", false, true);
+            await Promise.all([loadAccounts(), loadAudit()]);
+          } catch (error) {
+            setStatus(els.loginStatus, mapLoginError(error), true);
+          }
+        }
+
+        function onLogout() {
+          state.token = "";
+          state.serverId = "";
+          state.username = "";
+          els.loginPassword.value = "";
+          els.loginCard.classList.remove("hidden");
+          els.adminApp.classList.add("hidden");
+          setStatus(els.loginStatus, "已登出。", false, true);
+        }
+
+        async function onCreateAccount() {
+          const username = normalizeName(els.newUsername.value);
+          const password = String(els.newPassword.value || "");
+          const role = String(els.newRole.value || "").trim().toLowerCase();
+          if (!username || !password) {
+            setStatus(els.createStatus, "請輸入帳號與密碼", true);
+            return;
+          }
+          try {
+            await apiFetch("/v2/admin/" + encodeURIComponent(state.serverId) + "/accounts", {
+              method: "POST",
+              token: state.token,
+              body: { username, password, role },
+            });
+            els.newUsername.value = "";
+            els.newPassword.value = "";
+            setStatus(els.createStatus, "新增成功", false, true);
+            await Promise.all([loadAccounts(), loadAudit()]);
+          } catch (error) {
+            setStatus(els.createStatus, mapApiError(error), true);
+          }
+        }
+
+        async function loadAccounts() {
+          if (!state.token || !state.serverId) {
+            return;
+          }
+          setStatus(els.adminStatus, "讀取帳號中...");
+          try {
+            const result = await apiFetch("/v2/admin/" + encodeURIComponent(state.serverId) + "/accounts", {
+              method: "GET",
+              token: state.token,
+            });
+            const list = Array.isArray(result.accounts) ? result.accounts : [];
+            els.accountsBody.innerHTML = list
+              .map(function (item) {
+                const username = escapeHtml(item.username || "");
+                const role = escapeHtml(item.role || "staff");
+                const enabled = Boolean(item.enabled);
+                return (
+                  "<tr data-username=\"" +
+                  username +
+                  "\">" +
+                  "<td class=\"mono\">" +
+                  username +
+                  "</td>" +
+                  "<td><select data-field=\"role\"><option value=\"staff\"" +
+                  (role === "staff" ? " selected" : "") +
+                  ">staff</option><option value=\"manager\"" +
+                  (role === "manager" ? " selected" : "") +
+                  ">manager</option><option value=\"admin\"" +
+                  (role === "admin" ? " selected" : "") +
+                  ">admin</option></select></td>" +
+                  "<td><input data-field=\"enabled\" type=\"checkbox\"" +
+                  (enabled ? " checked" : "") +
+                  " /></td>" +
+                  "<td><input data-field=\"password\" type=\"password\" placeholder=\"留空不變更\" /></td>" +
+                  "<td><button class=\"btn\" data-action=\"save\" type=\"button\">儲存</button></td>" +
+                  "<td><button class=\"btn danger\" data-action=\"delete\" type=\"button\">刪除</button></td>" +
+                  "</tr>"
+                );
+              })
+              .join("");
+            setStatus(els.adminStatus, "帳號已更新。", false, true);
+          } catch (error) {
+            setStatus(els.adminStatus, mapApiError(error), true);
+          }
+        }
+
+        async function loadAudit() {
+          if (!state.token || !state.serverId) {
+            return;
+          }
+          try {
+            const result = await apiFetch(
+              "/v2/admin/" + encodeURIComponent(state.serverId) + "/audit?limit=200&offset=0",
+              {
+                method: "GET",
+                token: state.token,
+              },
+            );
+            const logs = Array.isArray(result.logs) ? result.logs : [];
+            els.auditBody.innerHTML = logs
+              .map(function (log) {
+                return (
+                  "<tr>" +
+                  "<td class=\"mono\">" +
+                  escapeHtml(String(log.id || "")) +
+                  "</td>" +
+                  "<td>" +
+                  escapeHtml(formatDateTime(log.createdAt)) +
+                  "</td>" +
+                  "<td class=\"mono\">" +
+                  escapeHtml(String(log.actorUsername || "")) +
+                  "</td>" +
+                  "<td>" +
+                  escapeHtml(String(log.actorRole || "")) +
+                  "</td>" +
+                  "<td class=\"mono\">" +
+                  escapeHtml(String(log.action || "")) +
+                  "</td>" +
+                  "<td>" +
+                  escapeHtml(String(log.targetType || "") + (log.targetId ? ":" + log.targetId : "")) +
+                  "</td>" +
+                  "<td>" +
+                  escapeHtml(String(log.summary || "")) +
+                  "</td>" +
+                  "</tr>"
+                );
+              })
+              .join("");
+          } catch (error) {
+            setStatus(els.adminStatus, mapApiError(error), true);
+          }
+        }
+
+        async function onAccountAction(event) {
+          const button = event.target.closest("button[data-action]");
+          if (!button) {
+            return;
+          }
+          const row = button.closest("tr[data-username]");
+          if (!row) {
+            return;
+          }
+          const username = normalizeName(row.dataset.username || "");
+          if (!username) {
+            return;
+          }
+          const action = String(button.dataset.action || "");
+
+          try {
+            if (action === "save") {
+              const role = String(row.querySelector("select[data-field=\"role\"]").value || "staff");
+              const enabled = Boolean(row.querySelector("input[data-field=\"enabled\"]").checked);
+              const password = String(row.querySelector("input[data-field=\"password\"]").value || "");
+              const body = { role: role, enabled: enabled };
+              if (password.trim()) {
+                body.password = password;
+              }
+              await apiFetch(
+                "/v2/admin/" + encodeURIComponent(state.serverId) + "/accounts/" + encodeURIComponent(username),
+                {
+                  method: "PATCH",
+                  token: state.token,
+                  body: body,
+                },
+              );
+              setStatus(els.adminStatus, "已更新帳號：" + username, false, true);
+            }
+            if (action === "delete") {
+              if (!window.confirm("確認刪除帳號 " + username + " ?")) {
+                return;
+              }
+              await apiFetch(
+                "/v2/admin/" + encodeURIComponent(state.serverId) + "/accounts/" + encodeURIComponent(username),
+                {
+                  method: "DELETE",
+                  token: state.token,
+                },
+              );
+              setStatus(els.adminStatus, "已刪除帳號：" + username, false, true);
+            }
+            await Promise.all([loadAccounts(), loadAudit()]);
+          } catch (error) {
+            setStatus(els.adminStatus, mapApiError(error), true);
+          }
+        }
+
+        async function apiFetch(path, options) {
+          const requestOptions = options || {};
+          const headers = {
+            "content-type": "application/json",
+          };
+          if (requestOptions.token) {
+            headers.Authorization = "Bearer " + requestOptions.token;
+          }
+          const response = await fetch(API_BASE + path, {
+            method: requestOptions.method || "GET",
+            headers: headers,
+            body: requestOptions.body ? JSON.stringify(requestOptions.body) : undefined,
+          });
+          const data = await response.json().catch(function () {
+            return { ok: false, error: "INVALID_RESPONSE" };
+          });
+          if (!response.ok || !data || data.ok === false) {
+            const code = String((data && data.error) || "REQUEST_FAILED");
+            const error = new Error(code);
+            error.code = code;
+            throw error;
+          }
+          return data;
+        }
+
+        function mapLoginError(error) {
+          const code = String(error && (error.code || error.message) ? error.code || error.message : "").toUpperCase();
+          if (code.includes("INVALID_CREDENTIALS")) return "密碼錯誤";
+          if (code.includes("FORBIDDEN_ROLE")) return "此帳號非 admin，無法登入後台";
+          if (code.includes("FORBIDDEN_SERVER")) return "伺服器未授權";
+          return "登入失敗：" + code;
+        }
+
+        function mapApiError(error) {
+          const code = String(error && (error.code || error.message) ? error.code || error.message : "").toUpperCase();
+          if (code.includes("ACCOUNT_EXISTS")) return "帳號已存在";
+          if (code.includes("ACCOUNT_NOT_FOUND")) return "找不到該帳號";
+          if (code.includes("CANNOT_DELETE_SELF")) return "不可刪除目前登入帳號";
+          if (code.includes("CANNOT_DISABLE_SELF")) return "不可停用目前登入帳號";
+          return "操作失敗：" + code;
+        }
+
+        function normalizeName(value) {
+          return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]/g, "");
+        }
+
+        function formatDateTime(value) {
+          if (!value) {
+            return "-";
+          }
+          const time = new Date(value);
+          if (Number.isNaN(time.getTime())) {
+            return String(value);
+          }
+          return (
+            time.getFullYear() +
+            "/" +
+            String(time.getMonth() + 1).padStart(2, "0") +
+            "/" +
+            String(time.getDate()).padStart(2, "0") +
+            " " +
+            String(time.getHours()).padStart(2, "0") +
+            ":" +
+            String(time.getMinutes()).padStart(2, "0") +
+            ":" +
+            String(time.getSeconds()).padStart(2, "0")
+          );
+        }
+
+        function setStatus(el, text, isError, isOk) {
+          if (!el) return;
+          el.textContent = String(text || "");
+          el.classList.remove("error");
+          el.classList.remove("ok");
+          if (isError) {
+            el.classList.add("error");
+          } else if (isOk) {
+            el.classList.add("ok");
+          }
+        }
+
+        function escapeHtml(value) {
+          return String(value == null ? "" : value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+      })();
+    </script>
+  </body>
+</html>

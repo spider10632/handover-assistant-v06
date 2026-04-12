@@ -90,8 +90,11 @@
   const UI_TEXT = Object.freeze({
     zh: Object.freeze({
       appTitle: "工作交接助手",
-      passwordSubtitle: "請輸入使用者後進入系統（不同使用者為獨立資料庫）",
-      passwordLabel: "使用者（英數、-、_）",
+      passwordSubtitle: "請輸入伺服器名稱與密碼進入系統（test 伺服器需密碼登入）。",
+      passwordServerLabel: "伺服器名稱（英數、-、_）",
+      passwordServerPlaceholder: "例：test / caesarmetro",
+      passwordLabel: "密碼",
+      passwordPlaceholder: "請輸入密碼（若伺服器要求）",
       passwordSubmit: "進入系統",
       languageLabel: "介面",
       todaySectionTitle: "當日事項",
@@ -189,8 +192,11 @@
     }),
     en: Object.freeze({
       appTitle: "Handover Assistant",
-      passwordSubtitle: "Enter a user account to access (each user has an isolated cloud database).",
-      passwordLabel: "User (letters, numbers, -, _)",
+      passwordSubtitle: "Enter server name and password (test server requires password login).",
+      passwordServerLabel: "Server (letters, numbers, -, _)",
+      passwordServerPlaceholder: "e.g. test / caesarmetro",
+      passwordLabel: "Password",
+      passwordPlaceholder: "Enter password if required",
       passwordSubmit: "Sign In",
       languageLabel: "Language",
       todaySectionTitle: "Today Board",
@@ -390,6 +396,8 @@
     currentServerId: null,
     currentServerConfig: null,
     currentProfile: null,
+    authToken: "",
+    authSession: null,
     uiLanguage: DEFAULT_UI_LANGUAGE,
     appliedThemeVarKeys: [],
     cloudInitDone: false,
@@ -468,16 +476,17 @@
   }
 
   function initAccessGate() {
-    if (!els.passwordGate || !els.passwordForm || !els.passwordInput) {
+    if (!els.passwordGate || !els.passwordForm || !els.serverInput || !els.passwordInput) {
       init();
       return;
     }
     document.body.classList.add("gate-locked");
     els.passwordGate.classList.remove("hidden");
     els.passwordForm.addEventListener("submit", handlePasswordSubmit);
+    els.serverInput.addEventListener("input", clearPasswordError);
     els.passwordInput.addEventListener("input", clearPasswordError);
     setTimeout(function () {
-      els.passwordInput.focus();
+      els.serverInput.focus();
     }, 40);
   }
 
@@ -589,6 +598,7 @@
     document.title = getUiText("appTitle");
     setElementText("password-title", getUiText("appTitle"));
     setElementText("password-subtitle", getUiText("passwordSubtitle"));
+    setElementText("password-server-label", getUiText("passwordServerLabel"));
     setElementText("password-label", getUiText("passwordLabel"));
     setElementText("password-submit", getUiText("passwordSubmit"));
     setElementText("ui-language-label", getUiText("languageLabel"));
@@ -628,6 +638,8 @@
     setElementPlaceholder("task-owner", getUiText("taskOwnerPlaceholder"));
     setElementPlaceholder("task-description", getUiText("taskDescriptionPlaceholder"));
     setElementPlaceholder("query-keyword", getUiText("keywordPlaceholder"));
+    setElementPlaceholder("server-input", getUiText("passwordServerPlaceholder"));
+    setElementPlaceholder("password-input", getUiText("passwordPlaceholder"));
     setElementPlaceholder("today-occupancy-rate", lang === "en" ? "e.g. 99.47" : "例: 99.47");
     setElementText("mobile-upcoming-toggle-text", getUiText("mobileUpcomingLabel"));
     if (els.mobileAddBtn) {
@@ -913,12 +925,37 @@
     return normalizeCloudApiBase(server && server.cloudApiBase);
   }
 
-  function buildCloudStateUrl(baseUrl, serverId) {
+  function buildCloudStateUrl(baseUrl, serverId, apiVersion) {
     const base = normalizeCloudApiBase(baseUrl);
     if (!base || !serverId) {
       return "";
     }
-    return base + "/v1/state/" + encodeURIComponent(serverId);
+    const version = String(apiVersion || "v1").toLowerCase() === "v2" ? "v2" : "v1";
+    return base + "/" + version + "/state/" + encodeURIComponent(serverId);
+  }
+
+  function buildCloudAuthLoginUrl(baseUrl) {
+    const base = normalizeCloudApiBase(baseUrl);
+    if (!base) {
+      return "";
+    }
+    return base + "/v2/auth/login";
+  }
+
+  function shouldUseV2StateApi(serverId) {
+    const normalizedServerId = normalizeServerInput(serverId || "");
+    if (!normalizedServerId) {
+      return false;
+    }
+    if (!state.authToken || !state.authSession || typeof state.authSession !== "object") {
+      return false;
+    }
+    return normalizeServerInput(state.authSession.serverId || "") === normalizedServerId;
+  }
+
+  function getCurrentCloudStateApiVersion() {
+    const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
+    return shouldUseV2StateApi(currentServerId) ? "v2" : "v1";
   }
 
   function getCurrentCloudUrl() {
@@ -927,7 +964,19 @@
       return "";
     }
     const cloudBase = getCloudApiBase(server);
-    return buildCloudStateUrl(cloudBase, server.serverId);
+    return buildCloudStateUrl(cloudBase, server.serverId, getCurrentCloudStateApiVersion());
+  }
+
+  function getCurrentCloudAuthHeaders() {
+    if (getCurrentCloudStateApiVersion() !== "v2") {
+      return {};
+    }
+    if (!state.authToken) {
+      return {};
+    }
+    return {
+      Authorization: "Bearer " + state.authToken,
+    };
   }
 
   function buildCloudTranslateUrl(baseUrl, serverId) {
@@ -1068,7 +1117,11 @@
     if (!url) {
       return false;
     }
-    const response = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, CLOUD_REQUEST_TIMEOUT_MS);
+    const response = await fetchWithTimeout(
+      url,
+      { method: "GET", cache: "no-store", headers: getCurrentCloudAuthHeaders() },
+      CLOUD_REQUEST_TIMEOUT_MS,
+    );
     if (response.status === 404) {
       return false;
     }
@@ -1133,7 +1186,11 @@
       };
       const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
 
-      const existingResponse = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, CLOUD_REQUEST_TIMEOUT_MS);
+      const existingResponse = await fetchWithTimeout(
+        url,
+        { method: "GET", cache: "no-store", headers: getCurrentCloudAuthHeaders() },
+        CLOUD_REQUEST_TIMEOUT_MS,
+      );
       if (existingResponse.ok) {
         const existingRaw = await existingResponse.text();
         if (existingRaw) {
@@ -1173,7 +1230,7 @@
         url,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: Object.assign({ "Content-Type": "application/json" }, getCurrentCloudAuthHeaders()),
           body: JSON.stringify(payload),
         },
         CLOUD_REQUEST_TIMEOUT_MS,
@@ -1618,34 +1675,126 @@
     }
   }
 
-  function handlePasswordSubmit(event) {
+  async function handlePasswordSubmit(event) {
     event.preventDefault();
-    const entered = normalizeServerInput(els.passwordInput.value || "");
+    const entered = normalizeServerInput((els.serverInput && els.serverInput.value) || "");
     const server = resolveServerByInput(entered);
     if (!server) {
       showPasswordError(
         isEnglishUi()
-          ? "Invalid user. Use letters/numbers/-/_ and at least 3 characters."
-          : "使用者錯誤（請用英數、-、_，至少 3 碼）。",
+          ? "Invalid server. Use letters/numbers/-/_ and at least 3 characters."
+          : "伺服器名稱錯誤（請用英數、-、_，至少 3 碼）。",
       );
       return;
     }
+
+    const password = String((els.passwordInput && els.passwordInput.value) || "");
+    const requiresPassword = normalizeServerInput(server.serverId || "") === "test";
+
+    if (requiresPassword && !password.trim()) {
+      showPasswordError(isEnglishUi() ? "Password required for test server." : "test 伺服器需要輸入密碼。");
+      return;
+    }
+
+    try {
+      if (requiresPassword) {
+        const loginResult = await authenticateServerWithPassword(server, password);
+        state.authToken = String(loginResult.token || "");
+        state.authSession = {
+          serverId: String(loginResult.serverId || server.serverId || ""),
+          username: String(loginResult.username || ""),
+          role: String(loginResult.role || ""),
+          expiresAt: String(loginResult.expiresAt || ""),
+        };
+      } else {
+        state.authToken = "";
+        state.authSession = null;
+      }
+    } catch (error) {
+      showPasswordError(extractAuthErrorMessage(error));
+      return;
+    }
+
     state.currentServerId = server.serverId;
     state.currentServerConfig = server;
     state.currentProfile = resolveProfileForServer(server.serverId);
     unlockAccessGate();
     init();
-    showToast(
-      isEnglishUi()
-        ? "Entered server: " + server.displayName
-        : "已進入 " + server.displayName + " 伺服器。",
+
+    if (requiresPassword && state.authSession && state.authSession.username) {
+      showToast(
+        isEnglishUi()
+          ? "Signed in: " + state.authSession.username + " @ " + server.displayName
+          : "已登入：" + state.authSession.username + "（" + server.displayName + "）",
+      );
+      return;
+    }
+
+    showToast(isEnglishUi() ? "Entered server: " + server.displayName : "已進入 " + server.displayName + " 伺服器。");
+  }
+
+  async function authenticateServerWithPassword(server, password) {
+    const cloudBase = getCloudApiBase(server);
+    const loginUrl = buildCloudAuthLoginUrl(cloudBase);
+    if (!loginUrl) {
+      throw new Error(isEnglishUi() ? "Cloud API is not configured." : "尚未設定 Cloud API。");
+    }
+
+    const response = await fetchWithTimeout(
+      loginUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          serverId: server && server.serverId ? server.serverId : "",
+          password: String(password || ""),
+        }),
+      },
+      CLOUD_REQUEST_TIMEOUT_MS,
     );
+
+    let parsed = null;
+    try {
+      parsed = await response.json();
+    } catch (error) {
+      parsed = null;
+    }
+
+    if (!response.ok || !parsed || !parsed.ok || !parsed.token) {
+      const apiError = parsed && parsed.error ? String(parsed.error) : "LOGIN_FAILED";
+      throw new Error(apiError);
+    }
+
+    return parsed;
+  }
+
+  function extractAuthErrorMessage(error) {
+    const raw = String(error && error.message ? error.message : "LOGIN_FAILED");
+    const code = raw.toUpperCase();
+    if (code.includes("INVALID_CREDENTIALS")) {
+      return isEnglishUi() ? "Wrong password." : "密碼錯誤。";
+    }
+    if (code.includes("FORBIDDEN_SERVER")) {
+      return isEnglishUi() ? "Server is not allowed." : "此伺服器未開放。";
+    }
+    if (code.includes("INVALID_SERVER_ID")) {
+      return isEnglishUi() ? "Invalid server id." : "伺服器代號錯誤。";
+    }
+    if (code.includes("ACCOUNT_DISABLED")) {
+      return isEnglishUi() ? "Account is disabled." : "此帳號已停用。";
+    }
+    return isEnglishUi() ? "Login failed, please retry." : "登入失敗，請稍後重試。";
   }
 
   function unlockAccessGate() {
     document.body.classList.remove("gate-locked");
     if (els.passwordGate) {
       els.passwordGate.classList.add("hidden");
+    }
+    if (els.serverInput) {
+      els.serverInput.value = "";
     }
     if (els.passwordInput) {
       els.passwordInput.value = "";
@@ -1672,6 +1821,7 @@
   function cacheElements() {
     els.passwordGate = document.getElementById("password-gate");
     els.passwordForm = document.getElementById("password-form");
+    els.serverInput = document.getElementById("server-input");
     els.passwordInput = document.getElementById("password-input");
     els.passwordError = document.getElementById("password-error");
     els.uiLanguageSelect = document.getElementById("ui-language-select");
