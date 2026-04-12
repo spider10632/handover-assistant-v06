@@ -51,3 +51,29 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_server_created ON audit_logs(server_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(server_id, actor_username, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  server_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  p256dh TEXT,
+  auth TEXT,
+  user_agent TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_server_user ON push_subscriptions(server_id, username, active);
+
+CREATE TABLE IF NOT EXISTS push_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  endpoint TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  click_url TEXT,
+  created_at TEXT NOT NULL,
+  delivered_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_events_endpoint_pending ON push_events(endpoint, delivered_at, id);

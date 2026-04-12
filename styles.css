@@ -364,6 +364,13 @@ h2 {
   justify-self: end;
 }
 
+.task-assignee-field {
+  width: 100%;
+  max-width: 260px;
+  justify-self: end;
+  grid-column: 3;
+}
+
 .form-actions {
   display: flex;
   align-items: center;
@@ -1364,7 +1371,8 @@ body.theme-mono .upcoming-empty {
     grid-column: 1 / -1;
   }
 
-  .task-owner-field {
+  .task-owner-field,
+  .task-assignee-field {
     max-width: none;
     justify-self: stretch;
   }
@@ -1501,36 +1509,32 @@ body.theme-mono .upcoming-empty {
   }
 
   .due-input-row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 108px;
     align-items: center;
     gap: 8px;
     width: 100%;
     min-width: 0;
   }
 
-  .due-input-row > * {
-    min-width: 0;
-    max-width: 100%;
-  }
-
   #task-start-date,
   #task-end-date {
-    flex: 1 1 calc(100% - 122px);
-    width: calc(100% - 122px);
+    grid-column: 1;
+    width: 100%;
     min-width: 0;
   }
 
   #task-start-at,
   #task-end-at {
-    flex: 0 0 114px;
-    width: 114px;
-    min-width: 114px;
-    max-width: 114px;
+    grid-column: 2;
+    width: 108px;
+    min-width: 108px;
+    max-width: 108px;
+    justify-self: end;
   }
 
   .due-input-row .all-day-btn {
-    flex: 1 1 100%;
+    grid-column: 1 / -1;
     width: 100%;
   }
 

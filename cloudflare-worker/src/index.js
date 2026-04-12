@@ -1,4 +1,4 @@
-const JSON_BASE_HEADERS = {
+﻿const JSON_BASE_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
@@ -11,6 +11,8 @@ const SESSION_TTL_DAYS = 30;
 const AUDIT_DEFAULT_LIMIT = 200;
 const AUDIT_MAX_LIMIT = 500;
 const ACCOUNT_ROLES = new Set(["admin", "manager", "staff"]);
+const PUSH_EVENTS_FETCH_LIMIT = 20;
+const VAPID_JWT_TTL_SECONDS = 12 * 60 * 60;
 
 export default {
   async fetch(request, env) {
@@ -145,6 +147,84 @@ async function handleV2Request(request, env, path, allowedUsers, cors) {
       .bind(new Date().toISOString(), auth.session.tokenHash)
       .run();
     return jsonResponse({ ok: true }, 200, cors);
+  }
+
+  if (path === "/v2/push/public-key") {
+    if (request.method !== "GET") {
+      return jsonResponse({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405, {
+        ...cors,
+        allow: "GET, OPTIONS",
+      });
+    }
+    const publicKey = String(env.VAPID_PUBLIC_KEY || "").trim();
+    return jsonResponse(
+      {
+        ok: true,
+        enabled: Boolean(publicKey),
+        publicKey,
+      },
+      200,
+      cors,
+    );
+  }
+
+  const accountsPublicMatch = path.match(/^\/v2\/accounts\/([a-z0-9_-]+)$/i);
+  if (accountsPublicMatch) {
+    const serverId = normalizeServerId(accountsPublicMatch[1]);
+    if (!serverId) {
+      return jsonResponse({ ok: false, error: "INVALID_SERVER_ID" }, 400, cors);
+    }
+    if (allowedUsers.size > 0 && !allowedUsers.has(serverId)) {
+      return jsonResponse({ ok: false, error: "FORBIDDEN_SERVER" }, 403, cors);
+    }
+    if (request.method !== "GET") {
+      return jsonResponse({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405, {
+        ...cors,
+        allow: "GET, OPTIONS",
+      });
+    }
+    const auth = await requireSession(request, env, serverId, cors);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    return handleListAccountsForServer(env, serverId, cors);
+  }
+
+  const pushSubMatch = path.match(/^\/v2\/push\/([a-z0-9_-]+)\/(subscribe|unsubscribe)$/i);
+  if (pushSubMatch) {
+    const serverId = normalizeServerId(pushSubMatch[1]);
+    const action = String(pushSubMatch[2] || "").toLowerCase();
+    if (!serverId) {
+      return jsonResponse({ ok: false, error: "INVALID_SERVER_ID" }, 400, cors);
+    }
+    if (allowedUsers.size > 0 && !allowedUsers.has(serverId)) {
+      return jsonResponse({ ok: false, error: "FORBIDDEN_SERVER" }, 403, cors);
+    }
+    if (request.method !== "POST") {
+      return jsonResponse({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405, {
+        ...cors,
+        allow: "POST, OPTIONS",
+      });
+    }
+    const auth = await requireSession(request, env, serverId, cors);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    if (action === "subscribe") {
+      return handlePushSubscribe(request, env, serverId, auth.session, cors);
+    }
+    return handlePushUnsubscribe(request, env, serverId, auth.session, cors);
+  }
+
+  if (path === "/v2/push/pending") {
+    if (request.method !== "GET") {
+      return jsonResponse({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405, {
+        ...cors,
+        allow: "GET, OPTIONS",
+      });
+    }
+    const url = new URL(request.url);
+    return handlePushPending(env, url.searchParams, cors);
   }
 
   const stateMatch = path.match(/^\/v2\/state\/([a-z0-9_-]+)$/i);
@@ -488,6 +568,147 @@ async function handleAdminListAccounts(env, serverId, cors) {
   );
 }
 
+async function handleListAccountsForServer(env, serverId, cors) {
+  await ensureBootstrapAccounts(env, serverId);
+  const result = await env.DB.prepare(
+    "SELECT username, role FROM auth_accounts WHERE server_id = ? AND enabled = 1 ORDER BY username ASC",
+  )
+    .bind(serverId)
+    .all();
+  const rows = Array.isArray(result && result.results) ? result.results : [];
+  return jsonResponse(
+    {
+      ok: true,
+      serverId,
+      accounts: rows.map((row) => ({
+        username: normalizeAccountName(row.username),
+        role: normalizeAccountRole(row.role),
+      })),
+    },
+    200,
+    cors,
+  );
+}
+
+async function handlePushSubscribe(request, env, serverId, actorSession, cors) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (error) {
+    return jsonResponse({ ok: false, error: "INVALID_JSON" }, 400, cors);
+  }
+
+  const subscription = body && typeof body.subscription === "object" && body.subscription ? body.subscription : body;
+  const endpoint = String(subscription && subscription.endpoint ? subscription.endpoint : "").trim();
+  if (!isValidPushEndpoint(endpoint)) {
+    return jsonResponse({ ok: false, error: "INVALID_ENDPOINT" }, 400, cors);
+  }
+
+  const keys = subscription && typeof subscription.keys === "object" && subscription.keys ? subscription.keys : {};
+  const p256dh = String(keys.p256dh || "").trim();
+  const auth = String(keys.auth || "").trim();
+  const userAgent = String(request.headers.get("user-agent") || "").slice(0, 1000);
+  const nowIso = new Date().toISOString();
+
+  await env.DB.prepare(
+    "INSERT INTO push_subscriptions (endpoint, server_id, username, p256dh, auth, user_agent, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET server_id = excluded.server_id, username = excluded.username, p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent, active = 1, updated_at = excluded.updated_at",
+  )
+    .bind(endpoint, serverId, actorSession.username, p256dh, auth, userAgent, nowIso, nowIso)
+    .run();
+
+  await insertAuditLog(env, {
+    serverId,
+    actorUsername: actorSession.username,
+    actorRole: actorSession.role,
+    action: "push_subscribed",
+    targetType: "push_subscription",
+    targetId: actorSession.username,
+    summary: "subscribe",
+    details: JSON.stringify({ endpoint: endpoint.slice(0, 120) }),
+    createdAt: nowIso,
+  });
+
+  return jsonResponse({ ok: true }, 200, cors);
+}
+
+async function handlePushUnsubscribe(request, env, serverId, actorSession, cors) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (error) {
+    return jsonResponse({ ok: false, error: "INVALID_JSON" }, 400, cors);
+  }
+
+  const endpoint = String(body && body.endpoint ? body.endpoint : "").trim();
+  if (!isValidPushEndpoint(endpoint)) {
+    return jsonResponse({ ok: false, error: "INVALID_ENDPOINT" }, 400, cors);
+  }
+
+  const nowIso = new Date().toISOString();
+  await env.DB.prepare(
+    "UPDATE push_subscriptions SET active = 0, updated_at = ? WHERE endpoint = ? AND server_id = ? AND username = ?",
+  )
+    .bind(nowIso, endpoint, serverId, actorSession.username)
+    .run();
+
+  await insertAuditLog(env, {
+    serverId,
+    actorUsername: actorSession.username,
+    actorRole: actorSession.role,
+    action: "push_unsubscribed",
+    targetType: "push_subscription",
+    targetId: actorSession.username,
+    summary: "unsubscribe",
+    details: JSON.stringify({ endpoint: endpoint.slice(0, 120) }),
+    createdAt: nowIso,
+  });
+
+  return jsonResponse({ ok: true }, 200, cors);
+}
+
+async function handlePushPending(env, searchParams, cors) {
+  const endpoint = String(searchParams.get("endpoint") || "").trim();
+  if (!isValidPushEndpoint(endpoint)) {
+    return jsonResponse({ ok: false, error: "INVALID_ENDPOINT" }, 400, cors);
+  }
+
+  const result = await env.DB.prepare(
+    "SELECT id, title, body, click_url, created_at FROM push_events WHERE endpoint = ? AND delivered_at IS NULL ORDER BY id ASC LIMIT ?",
+  )
+    .bind(endpoint, PUSH_EVENTS_FETCH_LIMIT)
+    .all();
+  const rows = Array.isArray(result && result.results) ? result.results : [];
+  if (rows.length === 0) {
+    return jsonResponse({ ok: true, events: [] }, 200, cors);
+  }
+
+  const ids = rows
+    .map((row) => Number(row.id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  if (ids.length > 0) {
+    const marks = ids.map(() => "?").join(", ");
+    const deliveredAt = new Date().toISOString();
+    await env.DB.prepare("UPDATE push_events SET delivered_at = ? WHERE id IN (" + marks + ")")
+      .bind(deliveredAt, ...ids)
+      .run();
+  }
+
+  return jsonResponse(
+    {
+      ok: true,
+      events: rows.map((row) => ({
+        id: Number(row.id || 0),
+        title: String(row.title || ""),
+        body: String(row.body || ""),
+        clickUrl: String(row.click_url || ""),
+        createdAt: String(row.created_at || ""),
+      })),
+    },
+    200,
+    cors,
+  );
+}
+
 async function handleAdminCreateAccount(request, env, serverId, actorSession, cors) {
   let body;
   try {
@@ -770,6 +991,31 @@ async function writeAuditForStateChange(env, serverId, actorSession, previousPay
         details: JSON.stringify({ next: buildAuditTaskSnapshot(nextTask) }),
         createdAt,
       });
+
+      const createdAssignee = normalizeTaskAssignee(nextTask);
+      if (createdAssignee && createdAssignee !== actorSession.username) {
+        await insertAuditLog(env, {
+          serverId,
+          actorUsername: actorSession.username,
+          actorRole: actorSession.role,
+          action: "task_assigned",
+          targetType: "task",
+          targetId: taskId,
+          summary: normalizeTaskTitle(nextTask),
+          details: JSON.stringify({ previousAssignee: "", nextAssignee: createdAssignee }),
+          createdAt,
+        });
+
+        const pushPayload = buildAssignmentPushPayload(nextTask, createdAt);
+        await queuePushEventsForUser(env, {
+          serverId,
+          username: createdAssignee,
+          title: pushPayload.title,
+          body: pushPayload.body,
+          clickUrl: pushPayload.clickUrl,
+          createdAt: pushPayload.createdAt,
+        });
+      }
       continue;
     }
 
@@ -828,6 +1074,36 @@ async function writeAuditForStateChange(env, serverId, actorSession, previousPay
       });
     }
 
+    const assignmentDiff = resolveTaskAssignmentDiff(prevTask, nextTask);
+    if (assignmentDiff.changed) {
+      await insertAuditLog(env, {
+        serverId,
+        actorUsername: actorSession.username,
+        actorRole: actorSession.role,
+        action: assignmentDiff.action,
+        targetType: "task",
+        targetId: taskId,
+        summary: normalizeTaskTitle(nextTask),
+        details: JSON.stringify({
+          previousAssignee: assignmentDiff.previousAssignee,
+          nextAssignee: assignmentDiff.nextAssignee,
+        }),
+        createdAt,
+      });
+
+      if (assignmentDiff.nextAssignee && assignmentDiff.nextAssignee !== actorSession.username) {
+        const pushPayload = buildAssignmentPushPayload(nextTask, createdAt);
+        await queuePushEventsForUser(env, {
+          serverId,
+          username: assignmentDiff.nextAssignee,
+          title: pushPayload.title,
+          body: pushPayload.body,
+          clickUrl: pushPayload.clickUrl,
+          createdAt: pushPayload.createdAt,
+        });
+      }
+    }
+
     await insertAuditLog(env, {
       serverId,
       actorUsername: actorSession.username,
@@ -863,7 +1139,6 @@ async function writeAuditForStateChange(env, serverId, actorSession, previousPay
     });
   }
 }
-
 function resolveTaskStatusAuditAction(previousTask, nextTask) {
   const previousStatus = String(previousTask && previousTask.status ? previousTask.status : "");
   const nextStatus = String(nextTask && nextTask.status ? nextTask.status : "");
@@ -929,6 +1204,299 @@ function buildAuditTaskSnapshot(task) {
 function normalizeTaskTitle(task) {
   const title = task && typeof task === "object" ? String(task.title || "").trim() : "";
   return title || "-";
+}
+
+function normalizeTaskAssignee(task) {
+  if (!task || typeof task !== "object") {
+    return "";
+  }
+  return normalizeAccountName(task.assignee || task.assignedTo || "");
+}
+
+function resolveTaskAssignmentDiff(previousTask, nextTask) {
+  const previousAssignee = normalizeTaskAssignee(previousTask);
+  const nextAssignee = normalizeTaskAssignee(nextTask);
+  if (previousAssignee === nextAssignee) {
+    return {
+      changed: false,
+      previousAssignee,
+      nextAssignee,
+      action: "",
+    };
+  }
+  return {
+    changed: true,
+    previousAssignee,
+    nextAssignee,
+    action: nextAssignee ? "task_assigned" : "task_unassigned",
+  };
+}
+
+function buildAssignmentPushPayload(task, createdAt) {
+  const category = String(task && task.category ? task.category : "-").trim() || "-";
+  const subcategory = String(task && task.subcategory ? task.subcategory : "").trim();
+  const categoryText = subcategory ? category + "/" + subcategory : category;
+  return {
+    title: "工作交接派單通知",
+    body: "你有一筆新的指派待辦：" + normalizeTaskTitle(task) + "（" + categoryText + "）",
+    clickUrl: "/handover-assistant-v06/",
+    createdAt,
+  };
+}
+
+async function queuePushEventsForUser(env, payload) {
+  const serverId = normalizeServerId(payload && payload.serverId);
+  const username = normalizeAccountName(payload && payload.username);
+  if (!serverId || !username) {
+    return;
+  }
+  const title = String(payload && payload.title ? payload.title : "").trim() || "交接通知";
+  const body = String(payload && payload.body ? payload.body : "").trim();
+  const clickUrl = String(payload && payload.clickUrl ? payload.clickUrl : "").trim();
+  const createdAt = String(payload && payload.createdAt ? payload.createdAt : "").trim() || new Date().toISOString();
+
+  const result = await env.DB.prepare(
+    "SELECT endpoint FROM push_subscriptions WHERE server_id = ? AND username = ? AND active = 1 ORDER BY updated_at DESC",
+  )
+    .bind(serverId, username)
+    .all();
+  const rows = Array.isArray(result && result.results) ? result.results : [];
+  if (rows.length === 0) {
+    return;
+  }
+
+  for (const row of rows) {
+    const endpoint = String(row && row.endpoint ? row.endpoint : "").trim();
+    if (!isValidPushEndpoint(endpoint)) {
+      continue;
+    }
+    await env.DB.prepare(
+      "INSERT INTO push_events (endpoint, title, body, click_url, created_at, delivered_at) VALUES (?, ?, ?, ?, ?, NULL)",
+    )
+      .bind(endpoint, title, body, clickUrl, createdAt)
+      .run();
+    await sendPushPingToEndpoint(env, endpoint);
+  }
+}
+
+async function sendPushPingToEndpoint(env, endpoint) {
+  const vapid = getVapidConfig(env);
+  if (!vapid) {
+    return false;
+  }
+  try {
+    const endpointUrl = new URL(endpoint);
+    const jwt = await createVapidJwt(endpoint, vapid);
+    const host = String(endpointUrl.hostname || "").toLowerCase();
+    const isGooglePushHost = host.endsWith(".googleapis.com") || host.includes("google.com");
+    const headers = {
+      TTL: "60",
+      Urgency: "high",
+      "Content-Length": "0",
+    };
+    if (isGooglePushHost) {
+      headers.Authorization = "WebPush " + jwt;
+      headers["Crypto-Key"] = "p256ecdsa=" + vapid.publicKey;
+    } else {
+      headers.Authorization = "vapid t=" + jwt + ", k=" + vapid.publicKey;
+    }
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+    });
+    if (response.status === 404 || response.status === 410) {
+      await env.DB.prepare("UPDATE push_subscriptions SET active = 0, updated_at = ? WHERE endpoint = ?")
+        .bind(new Date().toISOString(), endpoint)
+        .run();
+      return false;
+    }
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+function getVapidConfig(env) {
+  const publicKey = String(env && env.VAPID_PUBLIC_KEY ? env.VAPID_PUBLIC_KEY : "").trim();
+  const privateKey = String(env && env.VAPID_PRIVATE_KEY ? env.VAPID_PRIVATE_KEY : "").trim();
+  const subject = String(env && env.VAPID_SUBJECT ? env.VAPID_SUBJECT : "").trim() || "mailto:admin@example.com";
+  if (!publicKey || !privateKey) {
+    return null;
+  }
+  return {
+    publicKey,
+    privateKey,
+    subject,
+  };
+}
+
+async function createVapidJwt(endpoint, vapid) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const aud = new URL(endpoint).origin;
+  const header = {
+    typ: "JWT",
+    alg: "ES256",
+  };
+  const payload = {
+    aud,
+    exp: nowSeconds + VAPID_JWT_TTL_SECONDS,
+    sub: vapid.subject,
+  };
+
+  const encodedHeader = base64UrlEncodeUtf8(JSON.stringify(header));
+  const encodedPayload = base64UrlEncodeUtf8(JSON.stringify(payload));
+  const signingInput = encodedHeader + "." + encodedPayload;
+  const key = await importVapidPrivateKey(vapid.privateKey, vapid.publicKey);
+  const signatureRaw = await crypto.subtle.sign(
+    {
+      name: "ECDSA",
+      hash: "SHA-256",
+    },
+    key,
+    new TextEncoder().encode(signingInput),
+  );
+  const signatureJose = convertEcdsaSignatureToJose(new Uint8Array(signatureRaw));
+  return signingInput + "." + base64UrlEncodeBytes(signatureJose);
+}
+
+async function importVapidPrivateKey(privateKeyBase64Url, publicKeyBase64Url) {
+  const publicBytes = base64UrlDecodeToBytes(publicKeyBase64Url);
+  if (publicBytes.length !== 65 || publicBytes[0] !== 4) {
+    throw new Error("invalid vapid public key");
+  }
+  const x = base64UrlEncodeBytes(publicBytes.slice(1, 33));
+  const y = base64UrlEncodeBytes(publicBytes.slice(33, 65));
+  const d = base64UrlEncodeBytes(base64UrlDecodeToBytes(privateKeyBase64Url));
+
+  return crypto.subtle.importKey(
+    "jwk",
+    {
+      kty: "EC",
+      crv: "P-256",
+      x,
+      y,
+      d,
+      ext: true,
+      key_ops: ["sign"],
+    },
+    {
+      name: "ECDSA",
+      namedCurve: "P-256",
+    },
+    false,
+    ["sign"],
+  );
+}
+
+function convertEcdsaSignatureToJose(signatureBytes) {
+  if (!signatureBytes || signatureBytes.length === 0) {
+    return new Uint8Array(0);
+  }
+  if (signatureBytes.length === 64) {
+    return signatureBytes;
+  }
+  // DER sequence: 30 len 02 lenR R 02 lenS S
+  if (signatureBytes[0] !== 0x30) {
+    throw new Error("invalid ECDSA signature format");
+  }
+  let index = 1;
+  const seqLenInfo = readDerLength(signatureBytes, index);
+  index = seqLenInfo.nextIndex;
+
+  if (signatureBytes[index] !== 0x02) {
+    throw new Error("invalid ECDSA DER R tag");
+  }
+  index += 1;
+  const rLenInfo = readDerLength(signatureBytes, index);
+  index = rLenInfo.nextIndex;
+  const r = signatureBytes.slice(index, index + rLenInfo.length);
+  index += rLenInfo.length;
+
+  if (signatureBytes[index] !== 0x02) {
+    throw new Error("invalid ECDSA DER S tag");
+  }
+  index += 1;
+  const sLenInfo = readDerLength(signatureBytes, index);
+  index = sLenInfo.nextIndex;
+  const s = signatureBytes.slice(index, index + sLenInfo.length);
+
+  const rPadded = leftPadTo32(stripLeadingZeros(r));
+  const sPadded = leftPadTo32(stripLeadingZeros(s));
+  return concatUint8Arrays(rPadded, sPadded);
+}
+
+function readDerLength(bytes, index) {
+  const first = bytes[index];
+  if (first < 0x80) {
+    return { length: first, nextIndex: index + 1 };
+  }
+  const count = first & 0x7f;
+  let length = 0;
+  for (let i = 0; i < count; i += 1) {
+    length = (length << 8) | bytes[index + 1 + i];
+  }
+  return { length, nextIndex: index + 1 + count };
+}
+
+function stripLeadingZeros(bytes) {
+  let i = 0;
+  while (i < bytes.length - 1 && bytes[i] === 0) {
+    i += 1;
+  }
+  return bytes.slice(i);
+}
+
+function leftPadTo32(bytes) {
+  const src = bytes.length > 32 ? bytes.slice(bytes.length - 32) : bytes;
+  if (src.length === 32) {
+    return src;
+  }
+  const out = new Uint8Array(32);
+  out.set(src, 32 - src.length);
+  return out;
+}
+
+function concatUint8Arrays(a, b) {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+function base64UrlDecodeToBytes(value) {
+  const text = String(value || "").trim().replace(/-/g, "+").replace(/_/g, "/");
+  const padded = text + "=".repeat((4 - (text.length % 4 || 4)) % 4);
+  const raw = atob(padded);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) {
+    out[i] = raw.charCodeAt(i);
+  }
+  return out;
+}
+
+function base64UrlEncodeUtf8(value) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(String(value || "")));
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function isValidPushEndpoint(value) {
+  const text = String(value || "").trim();
+  if (!/^https:\/\//i.test(text)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(text);
+    return parsed.protocol === "https:";
+  } catch (error) {
+    return false;
+  }
 }
 
 async function insertAuditLog(env, entry) {
@@ -1636,3 +2204,4 @@ function isValidBackupPayload(payload, serverId) {
   }
   return true;
 }
+

@@ -28,6 +28,8 @@
       : "";
   const CLOUD_REQUEST_TIMEOUT_MS = 12000;
   const CLOUD_PUSH_DEBOUNCE_MS = 1200;
+  const PUSH_SYNC_INTERVAL_MS = 30000;
+  const PUSH_SERVICE_WORKER_FILE = "sw.js";
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
   const BACKUP_TYPE = "handover-backup";
   const BACKUP_VERSION = "0.95";
@@ -113,6 +115,8 @@
       timeRangeSep: "至",
       allDay: "全日",
       taskOwnerLabel: "填寫人",
+      taskAssigneeLabel: "指派給",
+      taskAssigneeUnassigned: "未指定（公用）",
       taskPinLabel: "置頂顯示",
       taskPinHelp: "一直顯示在網頁上",
       taskDescLabel: "交接說明",
@@ -165,6 +169,7 @@
       actionShowTranslated: "顯示翻譯",
       noTranslatedContent: "此內容目前無翻譯可切換。",
       owner: "填寫人",
+      assignee: "指派",
       completedBy: "完成人",
       countdown: "倒數",
       content: "內容",
@@ -215,6 +220,8 @@
       timeRangeSep: "to",
       allDay: "All Day",
       taskOwnerLabel: "Owner",
+      taskAssigneeLabel: "Assign To",
+      taskAssigneeUnassigned: "Unassigned (Shared)",
       taskPinLabel: "Pin Display",
       taskPinHelp: "Keep visible on page",
       taskDescLabel: "Handover Notes",
@@ -267,6 +274,7 @@
       actionShowTranslated: "Show Translation",
       noTranslatedContent: "No translated content available for this field.",
       owner: "Owner",
+      assignee: "Assignee",
       completedBy: "Done by",
       countdown: "Countdown",
       content: "Notes",
@@ -398,6 +406,9 @@
     currentProfile: null,
     authToken: "",
     authSession: null,
+    assignableAccounts: [],
+    serviceWorkerRegistration: null,
+    pushSyncTimer: null,
     uiLanguage: DEFAULT_UI_LANGUAGE,
     appliedThemeVarKeys: [],
     cloudInitDone: false,
@@ -447,6 +458,7 @@
     syncMobileReminderUi();
     syncCollapsiblePanels();
     setupCategorySelectOptions();
+    refreshAssigneeSelectOptions();
     syncUiLanguageSelect();
     if (els.queryCategory) {
       els.queryCategory.value = state.queryCategory;
@@ -469,6 +481,7 @@
     const startRuntime = function () {
       startReminderLoop();
       startCountdownLoop();
+      startPushSyncLoop();
       initCloudSync();
     };
     renderAll();
@@ -617,6 +630,7 @@
     setElementText("time-range-sep", getUiText("timeRangeSep"));
     setElementText("all-day-btn", getUiText("allDay"));
     setElementText("task-owner-label", getUiText("taskOwnerLabel"));
+    setElementText("task-assignee-label", getUiText("taskAssigneeLabel"));
     setElementText("task-pin-label", getUiText("taskPinLabel"));
     setElementText("task-pin-help", getUiText("taskPinHelp"));
     setElementText("task-desc-label", getUiText("taskDescLabel"));
@@ -641,6 +655,7 @@
     setElementPlaceholder("server-input", getUiText("passwordServerPlaceholder"));
     setElementPlaceholder("password-input", getUiText("passwordPlaceholder"));
     setElementPlaceholder("today-occupancy-rate", lang === "en" ? "e.g. 99.47" : "例: 99.47");
+    refreshAssigneeSelectOptions();
     setElementText("mobile-upcoming-toggle-text", getUiText("mobileUpcomingLabel"));
     if (els.mobileAddBtn) {
       els.mobileAddBtn.setAttribute(
@@ -710,6 +725,13 @@
 
   function normalizeServerInput(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function normalizeAccountName(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "");
   }
 
   function cloneCategoryList(source) {
@@ -979,6 +1001,454 @@
     };
   }
 
+  function getCurrentAuthUsername() {
+    return normalizeAccountName(state.authSession && state.authSession.username ? state.authSession.username : "");
+  }
+
+  function getCurrentAuthRole() {
+    return String(state.authSession && state.authSession.role ? state.authSession.role : "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function canAssignToOthers() {
+    const role = getCurrentAuthRole();
+    return role === "admin" || role === "manager";
+  }
+
+  function findAccountByUsername(username) {
+    const normalized = normalizeAccountName(username);
+    if (!normalized) {
+      return null;
+    }
+    return state.assignableAccounts.find(function (account) {
+      return normalizeAccountName(account.username) === normalized;
+    }) || null;
+  }
+
+  function refreshAssigneeSelectOptions() {
+    if (!els.taskAssignee) {
+      return;
+    }
+    const currentValue = normalizeAccountName(els.taskAssignee.value || "");
+    const options = [];
+    options.push('<option value="">' + escapeHtml(getUiText("taskAssigneeUnassigned")) + "</option>");
+
+    const seen = {};
+    const list = Array.isArray(state.assignableAccounts) ? state.assignableAccounts : [];
+    list.forEach(function (account) {
+      const username = normalizeAccountName(account && account.username ? account.username : "");
+      if (!username || seen[username]) {
+        return;
+      }
+      seen[username] = true;
+      const role = String(account && account.role ? account.role : "").trim();
+      const label = role ? username + " (" + role + ")" : username;
+      options.push('<option value="' + escapeHtml(username) + '">' + escapeHtml(label) + "</option>");
+    });
+
+    els.taskAssignee.innerHTML = options.join("");
+
+    const currentUser = getCurrentAuthUsername();
+    if (!canAssignToOthers() && currentUser) {
+      if (!findAccountByUsername(currentUser)) {
+        const role = getCurrentAuthRole();
+        const roleText = role ? " (" + role + ")" : "";
+        const fallbackOption = document.createElement("option");
+        fallbackOption.value = currentUser;
+        fallbackOption.textContent = currentUser + roleText;
+        els.taskAssignee.appendChild(fallbackOption);
+      }
+      els.taskAssignee.value = currentUser;
+      els.taskAssignee.disabled = true;
+      return;
+    }
+
+    els.taskAssignee.disabled = false;
+    if (currentValue && findAccountByUsername(currentValue)) {
+      els.taskAssignee.value = currentValue;
+      return;
+    }
+    els.taskAssignee.value = "";
+  }
+
+  async function loadAssignableAccounts(server) {
+    const currentServer = server || getCurrentServerConfig();
+    if (!currentServer) {
+      state.assignableAccounts = [];
+      refreshAssigneeSelectOptions();
+      return;
+    }
+
+    const serverId = normalizeServerInput(currentServer.serverId || "");
+    if (serverId !== "test" || !state.authToken) {
+      state.assignableAccounts = [];
+      refreshAssigneeSelectOptions();
+      return;
+    }
+
+    const cloudBase = getCloudApiBase(currentServer);
+    if (!cloudBase) {
+      state.assignableAccounts = [];
+      refreshAssigneeSelectOptions();
+      return;
+    }
+
+    const url = cloudBase + "/v2/accounts/" + encodeURIComponent(serverId);
+    try {
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: getCurrentCloudAuthHeaders(),
+        },
+        CLOUD_REQUEST_TIMEOUT_MS,
+      );
+      if (!response.ok) {
+        throw new Error("account list failed: " + response.status);
+      }
+      const parsed = await response.json();
+      const list = parsed && Array.isArray(parsed.accounts) ? parsed.accounts : [];
+      state.assignableAccounts = list
+        .map(function (item) {
+          return {
+            username: normalizeAccountName(item && item.username ? item.username : ""),
+            role: String(item && item.role ? item.role : "").trim().toLowerCase(),
+          };
+        })
+        .filter(function (item) {
+          return Boolean(item.username);
+        });
+      refreshAssigneeSelectOptions();
+    } catch (error) {
+      console.error("loadAssignableAccounts error", error);
+      state.assignableAccounts = [];
+      refreshAssigneeSelectOptions();
+    }
+  }
+
+  function isPushSupported() {
+    return (
+      typeof window !== "undefined" &&
+      typeof navigator !== "undefined" &&
+      "serviceWorker" in navigator &&
+      "PushManager" in window &&
+      "Notification" in window
+    );
+  }
+
+  function canUseCloudPush(server) {
+    const currentServer = server || getCurrentServerConfig();
+    if (!currentServer) {
+      return false;
+    }
+    const serverId = normalizeServerInput(currentServer.serverId || "");
+    if (serverId !== "test") {
+      return false;
+    }
+    if (!state.authToken) {
+      return false;
+    }
+    const cloudBase = getCloudApiBase(currentServer);
+    return Boolean(cloudBase);
+  }
+
+  function getAppBasePath() {
+    const path = String(window.location.pathname || "/");
+    if (!path) {
+      return "/";
+    }
+    if (path.endsWith("/")) {
+      return path;
+    }
+    const slashIndex = path.lastIndexOf("/");
+    if (slashIndex < 0) {
+      return "/";
+    }
+    return path.slice(0, slashIndex + 1) || "/";
+  }
+
+  function buildCloudPushUrl(baseUrl, serverId, action) {
+    const base = normalizeCloudApiBase(baseUrl);
+    const normalizedServerId = normalizeServerInput(serverId || "");
+    const normalizedAction = String(action || "").trim().toLowerCase();
+    if (!base || !normalizedServerId || (normalizedAction !== "subscribe" && normalizedAction !== "unsubscribe")) {
+      return "";
+    }
+    return base + "/v2/push/" + encodeURIComponent(normalizedServerId) + "/" + normalizedAction;
+  }
+
+  function buildCloudPushPublicKeyUrl(baseUrl) {
+    const base = normalizeCloudApiBase(baseUrl);
+    if (!base) {
+      return "";
+    }
+    return base + "/v2/push/public-key";
+  }
+
+  function toAbsoluteUrl(input) {
+    try {
+      return new URL(String(input || ""), window.location.href).toString();
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function buildServiceWorkerScriptUrl(server) {
+    const currentServer = server || getCurrentServerConfig();
+    const cloudBase = normalizeCloudApiBase(getCloudApiBase(currentServer));
+    const appBasePath = getAppBasePath();
+    const params = new URLSearchParams();
+    if (cloudBase) {
+      params.set("cloudBase", cloudBase);
+    }
+    params.set("appBasePath", appBasePath);
+    params.set("v", BACKUP_VERSION);
+    const scriptPath = PUSH_SERVICE_WORKER_FILE + "?" + params.toString();
+    return toAbsoluteUrl(scriptPath);
+  }
+
+  function postServiceWorkerConfig(registration, server) {
+    if (!registration) {
+      return;
+    }
+    const currentServer = server || getCurrentServerConfig();
+    const payload = {
+      type: "HANDOVER_SW_CONFIG",
+      cloudBase: normalizeCloudApiBase(getCloudApiBase(currentServer)),
+      appBasePath: getAppBasePath(),
+    };
+    const target = registration.active || registration.waiting || registration.installing;
+    if (!target || typeof target.postMessage !== "function") {
+      return;
+    }
+    try {
+      target.postMessage(payload);
+    } catch (error) {
+      // ignore unavailable service worker messaging
+    }
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const value = String(base64String || "").trim();
+    if (!value) {
+      return null;
+    }
+    const padding = "=".repeat((4 - (value.length % 4)) % 4);
+    const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i += 1) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  async function ensureServiceWorkerRegistration(server) {
+    if (!isPushSupported()) {
+      return null;
+    }
+    const scriptUrl = buildServiceWorkerScriptUrl(server);
+    if (!scriptUrl) {
+      return null;
+    }
+    const scope = getAppBasePath();
+    const registration = await navigator.serviceWorker.register(scriptUrl, { scope: scope });
+    state.serviceWorkerRegistration = registration;
+    postServiceWorkerConfig(registration, server);
+    navigator.serviceWorker.ready
+      .then(function (readyRegistration) {
+        postServiceWorkerConfig(readyRegistration || registration, server);
+      })
+      .catch(function () {
+        return null;
+      });
+    return registration;
+  }
+
+  async function fetchCloudPushPublicKey(server) {
+    const currentServer = server || getCurrentServerConfig();
+    if (!currentServer) {
+      return "";
+    }
+    const cloudBase = getCloudApiBase(currentServer);
+    const url = buildCloudPushPublicKeyUrl(cloudBase);
+    if (!url) {
+      return "";
+    }
+    try {
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+        CLOUD_REQUEST_TIMEOUT_MS,
+      );
+      if (!response.ok) {
+        return "";
+      }
+      const parsed = await response.json();
+      const key = parsed && parsed.publicKey ? String(parsed.publicKey).trim() : "";
+      return key;
+    } catch (error) {
+      console.error("fetchCloudPushPublicKey error", error);
+      return "";
+    }
+  }
+
+  async function postPushSubscription(server, subscription) {
+    const currentServer = server || getCurrentServerConfig();
+    if (!currentServer || !subscription) {
+      return false;
+    }
+    const url = buildCloudPushUrl(getCloudApiBase(currentServer), currentServer.serverId, "subscribe");
+    if (!url) {
+      return false;
+    }
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: Object.assign(
+          {
+            "Content-Type": "application/json",
+          },
+          getCurrentCloudAuthHeaders(),
+        ),
+        body: JSON.stringify({ subscription: subscription }),
+      },
+      CLOUD_REQUEST_TIMEOUT_MS,
+    );
+    return response.ok;
+  }
+
+  async function postPushUnsubscribe(server, endpoint) {
+    const currentServer = server || getCurrentServerConfig();
+    if (!currentServer || !endpoint) {
+      return false;
+    }
+    const url = buildCloudPushUrl(getCloudApiBase(currentServer), currentServer.serverId, "unsubscribe");
+    if (!url) {
+      return false;
+    }
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: Object.assign(
+          {
+            "Content-Type": "application/json",
+          },
+          getCurrentCloudAuthHeaders(),
+        ),
+        body: JSON.stringify({ endpoint: endpoint }),
+      },
+      CLOUD_REQUEST_TIMEOUT_MS,
+    );
+    return response.ok;
+  }
+
+  async function disableCloudPushSubscription(server) {
+    if (!isPushSupported()) {
+      return;
+    }
+    try {
+      const registration = state.serviceWorkerRegistration || (await navigator.serviceWorker.getRegistration(getAppBasePath()));
+      if (!registration || !registration.pushManager) {
+        return;
+      }
+      const subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        return;
+      }
+      const endpoint = subscription.endpoint ? String(subscription.endpoint) : "";
+      if (endpoint && canUseCloudPush(server || getCurrentServerConfig())) {
+        try {
+          await postPushUnsubscribe(server, endpoint);
+        } catch (error) {
+          console.error("postPushUnsubscribe error", error);
+        }
+      }
+      await subscription.unsubscribe();
+    } catch (error) {
+      console.error("disableCloudPushSubscription error", error);
+    }
+  }
+
+  async function ensureCloudPushSubscription(server, options) {
+    const opts = options && typeof options === "object" ? options : {};
+    if (!isPushSupported()) {
+      return { ok: false, reason: "UNSUPPORTED" };
+    }
+    if (!canUseCloudPush(server)) {
+      return { ok: false, reason: "NOT_ELIGIBLE" };
+    }
+    if (!els.notificationToggle || !els.notificationToggle.checked) {
+      return { ok: false, reason: "TOGGLE_OFF" };
+    }
+
+    const registration = await ensureServiceWorkerRegistration(server);
+    if (!registration || !registration.pushManager) {
+      return { ok: false, reason: "REGISTER_FAILED" };
+    }
+
+    let permission = Notification.permission;
+    if (permission !== "granted" && opts.requestPermission !== false) {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== "granted") {
+      return { ok: false, reason: "PERMISSION_NOT_GRANTED" };
+    }
+
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      const publicKey = await fetchCloudPushPublicKey(server);
+      const keyBytes = urlBase64ToUint8Array(publicKey);
+      if (!keyBytes) {
+        return { ok: false, reason: "NO_PUBLIC_KEY" };
+      }
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes,
+      });
+    }
+
+    try {
+      const ok = await postPushSubscription(server, subscription.toJSON ? subscription.toJSON() : subscription);
+      if (!ok) {
+        return { ok: false, reason: "SUBSCRIBE_API_FAILED" };
+      }
+    } catch (error) {
+      console.error("postPushSubscription error", error);
+      return { ok: false, reason: "SUBSCRIBE_API_FAILED" };
+    }
+
+    return { ok: true };
+  }
+
+  function startPushSyncLoop() {
+    if (state.pushSyncTimer) {
+      clearInterval(state.pushSyncTimer);
+      state.pushSyncTimer = null;
+    }
+    if (!isPushSupported()) {
+      return;
+    }
+    state.pushSyncTimer = setInterval(function () {
+      if (!document.hidden) {
+        ensureCloudPushSubscription(getCurrentServerConfig(), {
+          requestPermission: false,
+        }).catch(function () {
+          return null;
+        });
+      }
+    }, PUSH_SYNC_INTERVAL_MS);
+  }
+
   function buildCloudTranslateUrl(baseUrl, serverId) {
     const base = normalizeCloudApiBase(baseUrl);
     if (!base || !serverId) {
@@ -1046,6 +1516,9 @@
     const url = getCurrentCloudUrl();
     if (!url) {
       state.cloudInitDone = true;
+      disableCloudPushSubscription(getCurrentServerConfig()).catch(function () {
+        return null;
+      });
       showToast("尚未設定 Cloudflare API，暫用本機資料。");
       return;
     }
@@ -1057,6 +1530,11 @@
       state.cloudInitDone = true;
       await pushCloudBackupNow();
       showToast("已連線雲端資料庫。");
+      ensureCloudPushSubscription(getCurrentServerConfig(), {
+        requestPermission: false,
+      }).catch(function () {
+        return null;
+      });
     } catch (error) {
       console.error("initCloudSync error", error);
       state.cloudInitDone = true;
@@ -1710,6 +2188,10 @@
         state.authToken = "";
         state.authSession = null;
       }
+      await loadAssignableAccounts(server);
+      if (!requiresPassword) {
+        await disableCloudPushSubscription(server);
+      }
     } catch (error) {
       showPasswordError(extractAuthErrorMessage(error));
       return;
@@ -1720,6 +2202,11 @@
     state.currentProfile = resolveProfileForServer(server.serverId);
     unlockAccessGate();
     init();
+    if (requiresPassword) {
+      ensureCloudPushSubscription(server, { requestPermission: false }).catch(function () {
+        return null;
+      });
+    }
 
     if (requiresPassword && state.authSession && state.authSession.username) {
       showToast(
@@ -1839,6 +2326,7 @@
     els.allDayBtn = document.getElementById("all-day-btn");
     els.taskPinned = document.getElementById("task-pinned");
     els.taskDescription = document.getElementById("task-description");
+    els.taskAssignee = document.getElementById("task-assignee");
     els.addTaskBtn = document.getElementById("add-task-btn");
     els.clearFormBtn = document.getElementById("clear-form-btn");
     els.cancelEditBtn = document.getElementById("cancel-edit-btn");
@@ -1944,6 +2432,9 @@
     }
     if (els.requestNotificationBtn) {
       els.requestNotificationBtn.addEventListener("click", requestNotificationPermission);
+    }
+    if (els.notificationToggle) {
+      els.notificationToggle.addEventListener("change", handleNotificationToggleChange);
     }
     if (els.mobileUpcomingToggle) {
       els.mobileUpcomingToggle.addEventListener("click", handleMobileUpcomingToggle);
@@ -2534,8 +3025,10 @@
     const category = String(els.taskCategory.value || "").trim();
     const subcategory = String(els.taskSubcategory.value || "").trim();
 
-    [els.taskTitle, els.taskOwner, els.taskStartDate, els.taskEndDate, els.taskStartAt, els.taskEndAt, els.taskPinned, els.taskDescription].forEach(function (el) {
-      el.disabled = locked;
+    [els.taskTitle, els.taskOwner, els.taskAssignee, els.taskStartDate, els.taskEndDate, els.taskStartAt, els.taskEndAt, els.taskPinned, els.taskDescription].forEach(function (el) {
+      if (el) {
+        el.disabled = locked;
+      }
     });
     els.allDayBtn.disabled = locked;
     els.addTaskBtn.disabled = locked;
@@ -2636,6 +3129,7 @@
       subcategory: normalizeSubcategory(category, input.subcategory),
       title: String(input.title || "").trim(),
       owner: String(input.owner || "").trim(),
+      assignee: normalizeAccountName(input.assignee || input.assignedTo || ""),
       completedBy: String(input.completedBy || "").trim(),
       description: String(input.description || "").trim(),
       translations: normalizeTaskTranslations(input.translations),
@@ -2663,6 +3157,7 @@
     const subcategory = String(els.taskSubcategory.value || "").trim();
     const title = els.taskTitle.value.trim();
     const owner = els.taskOwner.value.trim();
+    const assignee = normalizeAccountName(els.taskAssignee ? els.taskAssignee.value : "");
     const description = els.taskDescription.value.trim();
     const startDateInput = String(els.taskStartDate ? els.taskStartDate.value || "" : "").trim();
     const endDateInput = String(els.taskEndDate ? els.taskEndDate.value || "" : "").trim();
@@ -2700,6 +3195,7 @@
       task.subcategory = normalizedSubcategory;
       task.title = title;
       task.owner = owner;
+      task.assignee = assignee;
       task.description = description;
       const noteChanged = previousDescription !== description;
       let translateResult = { changed: false, hasError: false };
@@ -2739,6 +3235,7 @@
       subcategory: normalizedSubcategory,
       title: title,
       owner: owner,
+      assignee: assignee,
       completedBy: "",
       description: description,
       translations: {},
@@ -2955,6 +3452,15 @@
     }
     els.taskTitle.value = task.title;
     els.taskOwner.value = task.owner;
+    if (els.taskAssignee) {
+      refreshAssigneeSelectOptions();
+      const assignee = normalizeAccountName(task.assignee || "");
+      if (assignee && findAccountByUsername(assignee)) {
+        els.taskAssignee.value = assignee;
+      } else {
+        els.taskAssignee.value = "";
+      }
+    }
     setAllDayMode(Boolean(task.allDay));
     const startAt = getTaskStartAt(task);
     const endAt = getTaskEndAt(task);
@@ -3044,6 +3550,7 @@
   function resetTaskForm() {
     state.editingTaskId = null;
     els.taskForm.reset();
+    refreshAssigneeSelectOptions();
     updateSubcategoryOptions();
     setDefaultDueTime();
     els.addTaskBtn.textContent = getUiText("addTask");
@@ -3154,6 +3661,9 @@
     const originalBtnText = showingOriginal ? getUiText("actionShowTranslated") : getUiText("actionShowOriginal");
     const translateBtnText = translationBusy ? getUiText("actionTranslating") : getUiText("actionTranslateTask");
     const completionText = isDone && task.completedBy ? " | " + getUiText("completedBy") + "：" + escapeHtml(task.completedBy) : "";
+    const assigneeDisplay = task.assignee
+      ? escapeHtml(task.assignee)
+      : escapeHtml(getUiText("taskAssigneeUnassigned"));
     const metaLineText =
       escapeHtml(displayCategory) +
       (displaySubcategory ? " / " + escapeHtml(displaySubcategory) : "") +
@@ -3161,6 +3671,10 @@
       getUiText("owner") +
       "：" +
       escapeHtml(task.owner || getUiText("notFilled")) +
+      " | " +
+      getUiText("assignee") +
+      "：" +
+      assigneeDisplay +
       completionText +
       " | " +
       getUiText("countdown") +
@@ -3279,6 +3793,7 @@
         const originalBtnText = showingOriginal ? getUiText("actionShowTranslated") : getUiText("actionShowOriginal");
         const translateBtnText = translationBusy ? getUiText("actionTranslating") : getUiText("actionTranslateTask");
         const completedByText = task.status === "done" && task.completedBy ? escapeHtml(task.completedBy) : "-";
+        const ownerCellText = escapeHtml(task.owner) + "<br><span style=\"color:#766e61;\">" + escapeHtml(getUiText("assignee")) + "：" + escapeHtml(task.assignee || getUiText("taskAssigneeUnassigned")) + "</span>";
         const subcategoryHtml = displaySubcategory
           ? escapeHtml(displaySubcategory)
           : '<span style="color:#7a9198;">-</span>';
@@ -3307,7 +3822,7 @@
           escapeHtml(displayTitle) +
           "</td>" +
           "<td>" +
-          escapeHtml(task.owner) +
+          ownerCellText +
           "</td>" +
           "<td>" +
           completedByText +
@@ -3444,6 +3959,10 @@
       getUiText("owner") +
       "：" +
       escapeHtml(task.owner || getUiText("notFilled")) +
+      " | " +
+      getUiText("assignee") +
+      "：" +
+      escapeHtml(task.assignee || getUiText("taskAssigneeUnassigned")) +
       " | " +
       getUiText("countdown") +
       "：" +
@@ -3590,8 +4109,15 @@
       return;
     }
     try {
-      const result = await Notification.requestPermission();
+      const result = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
       if (result === "granted") {
+        const syncResult = await ensureCloudPushSubscription(getCurrentServerConfig(), {
+          requestPermission: false,
+        });
+        if (syncResult.ok) {
+          showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notifications enabled (offline push ready)." : "已授權通知（離線推播已啟用）。");
+          return;
+        }
         showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notifications enabled." : "已授權瀏覽器通知。");
       } else if (result === "denied") {
         showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notifications blocked. Enable in browser settings." : "通知已被封鎖，可到瀏覽器設定開啟。");
@@ -3602,6 +4128,23 @@
       console.error("requestPermission error", error);
       showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Notification authorization failed." : "通知授權失敗。");
     }
+  }
+
+  function handleNotificationToggleChange() {
+    if (!els.notificationToggle) {
+      return;
+    }
+    if (!els.notificationToggle.checked) {
+      disableCloudPushSubscription(getCurrentServerConfig()).catch(function () {
+        return null;
+      });
+      return;
+    }
+    ensureCloudPushSubscription(getCurrentServerConfig(), {
+      requestPermission: false,
+    }).catch(function () {
+      return null;
+    });
   }
 
   function collectExportContext() {
@@ -4809,6 +5352,7 @@
     lines.push(getUiText("taskSubcategoryLabel") + "：" + displaySubcategory);
     lines.push(getUiText("taskTitleLabel") + "：" + displayTitle);
     lines.push(getUiText("owner") + "：" + (task.owner || "-"));
+    lines.push(getUiText("assignee") + "：" + (task.assignee || getUiText("taskAssigneeUnassigned")));
     if (isDone) {
       lines.push(getUiText("completedBy") + "：" + (task.completedBy || "-"));
     }

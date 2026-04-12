@@ -21,7 +21,7 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
     />
-    <link rel="stylesheet" href="styles.css?v=20260411-03" />
+    <link rel="stylesheet" href="styles.css?v=20260412-04" />
   </head>
   <body>
     <div class="bg-shape shape-a"></div>
@@ -182,6 +182,13 @@
             <label class="task-owner-field">
               <span id="task-owner-label">填寫人</span>
               <input id="task-owner" name="owner" type="text" placeholder="例：王小明" required />
+            </label>
+
+            <label class="task-assignee-field">
+              <span id="task-assignee-label">指派給</span>
+              <select id="task-assignee" name="assignee">
+                <option value="">未指定（公用）</option>
+              </select>
             </label>
 
             <label class="pin-option full-width">
@@ -357,6 +364,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260412-01" defer></script>
+    <script src="app.js?v=20260412-02" defer></script>
   </body>
 </html>
