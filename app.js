@@ -1079,12 +1079,17 @@
     const list = Array.isArray(state.assignableAccounts) ? state.assignableAccounts : [];
     list.forEach(function (account) {
       const username = normalizeAccountName(account && account.username ? account.username : "");
+      const roleNormalized = String(account && account.role ? account.role : "")
+        .trim()
+        .toLowerCase();
       if (!username || seen[username]) {
         return;
       }
+      if (roleNormalized === "admin") {
+        return;
+      }
       seen[username] = true;
-      const role = String(account && account.role ? account.role : "").trim();
-      const label = role ? username + " (" + role + ")" : username;
+      const label = roleNormalized ? username + " (" + roleNormalized + ")" : username;
       options.push('<option value="' + escapeHtml(username) + '">' + escapeHtml(label) + "</option>");
     });
 
