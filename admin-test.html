@@ -57,6 +57,10 @@
       .grid.two {
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
       }
+      .grid.audit-filters {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+      }
       label {
         display: grid;
         gap: 6px;
@@ -161,6 +165,12 @@
       .mono {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
+      .cell-details {
+        max-width: 460px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: #51462f;
+      }
       @media (max-width: 820px) {
         .wrap {
           width: min(1120px, 94vw);
@@ -253,6 +263,51 @@
           <h2>操作紀錄</h2>
           <button id="refresh-audit-btn" class="btn" type="button">重新整理</button>
         </div>
+        <div class="card" style="margin-top: 10px; margin-bottom: 12px; background: #fdfbf7">
+          <div class="grid audit-filters">
+            <label>
+              分類
+              <select id="audit-category-filter">
+                <option value="">全部分類</option>
+                <option value="auth">登入驗證</option>
+                <option value="task">待辦事項</option>
+                <option value="account">帳號管理</option>
+                <option value="push">通知訂閱</option>
+                <option value="today">今日概況</option>
+                <option value="other">其他</option>
+              </select>
+            </label>
+            <label>
+              人員
+              <select id="audit-actor-filter">
+                <option value="">全部人員</option>
+              </select>
+            </label>
+            <label>
+              角色
+              <select id="audit-role-filter">
+                <option value="">全部角色</option>
+                <option value="admin">admin</option>
+                <option value="manager">manager</option>
+                <option value="staff">staff</option>
+              </select>
+            </label>
+            <label>
+              動作
+              <select id="audit-action-filter">
+                <option value="">全部動作</option>
+              </select>
+            </label>
+            <label>
+              關鍵字
+              <input id="audit-keyword-filter" type="text" placeholder="搜尋摘要/目標/內容細項" />
+            </label>
+          </div>
+          <div class="row toolbar" style="margin-top: 8px">
+            <span id="audit-filter-summary" class="status">目前顯示全部紀錄。</span>
+            <button id="audit-clear-filter-btn" class="btn" type="button">清除篩選</button>
+          </div>
+        </div>
         <div style="overflow: auto">
           <table>
             <thead>
@@ -264,6 +319,7 @@
                 <th>動作</th>
                 <th>目標</th>
                 <th>摘要</th>
+                <th>內容細項</th>
               </tr>
             </thead>
             <tbody id="audit-body"></tbody>
@@ -287,6 +343,7 @@
           token: "",
           serverId: "",
           username: "",
+          auditLogs: [],
         };
 
         const els = {
@@ -308,6 +365,13 @@
           accountsBody: document.getElementById("accounts-body"),
           refreshAuditBtn: document.getElementById("refresh-audit-btn"),
           auditBody: document.getElementById("audit-body"),
+          auditCategoryFilter: document.getElementById("audit-category-filter"),
+          auditActorFilter: document.getElementById("audit-actor-filter"),
+          auditRoleFilter: document.getElementById("audit-role-filter"),
+          auditActionFilter: document.getElementById("audit-action-filter"),
+          auditKeywordFilter: document.getElementById("audit-keyword-filter"),
+          auditClearFilterBtn: document.getElementById("audit-clear-filter-btn"),
+          auditFilterSummary: document.getElementById("audit-filter-summary"),
           adminStatus: document.getElementById("admin-status"),
         };
 
@@ -316,6 +380,12 @@
         els.createBtn.addEventListener("click", onCreateAccount);
         els.refreshAccountsBtn.addEventListener("click", loadAccounts);
         els.refreshAuditBtn.addEventListener("click", loadAudit);
+        els.auditCategoryFilter.addEventListener("change", renderAudit);
+        els.auditActorFilter.addEventListener("change", renderAudit);
+        els.auditRoleFilter.addEventListener("change", renderAudit);
+        els.auditActionFilter.addEventListener("change", renderAudit);
+        els.auditKeywordFilter.addEventListener("input", renderAudit);
+        els.auditClearFilterBtn.addEventListener("click", clearAuditFilters);
         els.accountsBody.addEventListener("click", onAccountAction);
 
         async function onLogin() {
@@ -447,9 +517,102 @@
                 token: state.token,
               },
             );
-            const logs = Array.isArray(result.logs) ? result.logs : [];
-            els.auditBody.innerHTML = logs
+            state.auditLogs = Array.isArray(result.logs) ? result.logs : [];
+            refreshAuditFilterOptions(state.auditLogs);
+            renderAudit();
+          } catch (error) {
+            setStatus(els.adminStatus, mapApiError(error), true);
+          }
+        }
+
+        function clearAuditFilters() {
+          els.auditCategoryFilter.value = "";
+          els.auditActorFilter.value = "";
+          els.auditRoleFilter.value = "";
+          els.auditActionFilter.value = "";
+          els.auditKeywordFilter.value = "";
+          renderAudit();
+        }
+
+        function refreshAuditFilterOptions(logs) {
+          const actorSet = new Set();
+          const actionSet = new Set();
+          for (const log of logs) {
+            const actor = String(log && log.actorUsername ? log.actorUsername : "").trim();
+            const action = String(log && log.action ? log.action : "").trim();
+            if (actor) actorSet.add(actor);
+            if (action) actionSet.add(action);
+          }
+          fillSelectOptions(els.auditActorFilter, Array.from(actorSet).sort(), "全部人員");
+          fillSelectOptions(els.auditActionFilter, Array.from(actionSet).sort(), "全部動作");
+        }
+
+        function fillSelectOptions(selectEl, values, allLabel) {
+          if (!selectEl) return;
+          const current = String(selectEl.value || "");
+          const options = ['<option value="">' + escapeHtml(allLabel) + "</option>"];
+          values.forEach(function (value) {
+            options.push(
+              '<option value="' +
+                escapeHtml(value) +
+                '"' +
+                (value === current ? " selected" : "") +
+                ">" +
+                escapeHtml(value) +
+                "</option>",
+            );
+          });
+          selectEl.innerHTML = options.join("");
+          if (!values.includes(current)) {
+            selectEl.value = "";
+          }
+        }
+
+        function renderAudit() {
+          const logs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
+          const categoryFilter = String(els.auditCategoryFilter.value || "").trim();
+          const actorFilter = String(els.auditActorFilter.value || "").trim();
+          const roleFilter = String(els.auditRoleFilter.value || "").trim();
+          const actionFilter = String(els.auditActionFilter.value || "").trim();
+          const keywordFilter = String(els.auditKeywordFilter.value || "").trim().toLowerCase();
+
+          const filtered = logs.filter(function (log) {
+            const actor = String(log.actorUsername || "");
+            const role = String(log.actorRole || "");
+            const action = String(log.action || "");
+            const category = getAuditCategory(action);
+            const detailsText = formatAuditDetails(log.details);
+            const keywordPool = (
+              actor +
+              "\n" +
+              role +
+              "\n" +
+              action +
+              "\n" +
+              String(log.targetType || "") +
+              "\n" +
+              String(log.targetId || "") +
+              "\n" +
+              String(log.summary || "") +
+              "\n" +
+              detailsText
+            ).toLowerCase();
+
+            if (categoryFilter && category !== categoryFilter) return false;
+            if (actorFilter && actor !== actorFilter) return false;
+            if (roleFilter && role !== roleFilter) return false;
+            if (actionFilter && action !== actionFilter) return false;
+            if (keywordFilter && !keywordPool.includes(keywordFilter)) return false;
+            return true;
+          });
+
+          if (!filtered.length) {
+            els.auditBody.innerHTML =
+              '<tr><td colspan="8" style="text-align:center; color:#7a6f5a; padding:14px;">查無符合條件的紀錄</td></tr>';
+          } else {
+            els.auditBody.innerHTML = filtered
               .map(function (log) {
+                const detailsText = formatAuditDetails(log.details);
                 return (
                   "<tr>" +
                   "<td class=\"mono\">" +
@@ -473,12 +636,62 @@
                   "<td>" +
                   escapeHtml(String(log.summary || "")) +
                   "</td>" +
+                  "<td class=\"cell-details\">" +
+                  escapeHtml(detailsText).replace(/\n/g, "<br />") +
+                  "</td>" +
                   "</tr>"
                 );
               })
               .join("");
-          } catch (error) {
-            setStatus(els.adminStatus, mapApiError(error), true);
+          }
+
+          if (els.auditFilterSummary) {
+            els.auditFilterSummary.textContent =
+              "目前顯示 " + filtered.length + " / " + logs.length + " 筆紀錄。";
+          }
+        }
+
+        function getAuditCategory(action) {
+          const name = String(action || "");
+          if (name.startsWith("auth_")) return "auth";
+          if (name.startsWith("task_")) return "task";
+          if (name.startsWith("account_")) return "account";
+          if (name.startsWith("push_")) return "push";
+          if (name.startsWith("today_")) return "today";
+          return "other";
+        }
+
+        function formatAuditDetails(details) {
+          if (details == null || details === "") return "-";
+          if (typeof details === "string") return details;
+          if (Array.isArray(details)) {
+            return details
+              .map(function (item, index) {
+                return index + 1 + ". " + detailValueToText(item);
+              })
+              .join("\n");
+          }
+          if (typeof details === "object") {
+            const keys = Object.keys(details);
+            if (!keys.length) return "-";
+            return keys
+              .map(function (key) {
+                return key + ": " + detailValueToText(details[key]);
+              })
+              .join("\n");
+          }
+          return String(details);
+        }
+
+        function detailValueToText(value) {
+          if (value == null) return "-";
+          if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+            return String(value);
+          }
+          try {
+            return JSON.stringify(value);
+          } catch (_) {
+            return String(value);
           }
         }
 
