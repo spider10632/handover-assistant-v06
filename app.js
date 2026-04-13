@@ -3661,14 +3661,13 @@
         if (selectedCategory !== "all" && task.category !== selectedCategory) {
           return false;
         }
-        const startAt = getTaskStartAt(task);
-        return startAt && toDateKey(new Date(startAt)) === todayKey;
+        return isTaskInDateRange(task, todayKey);
       })
       .sort(sortByDueTime);
 
     const pinnedList = state.tasks
       .filter(function (task) {
-        return Boolean(task.pinned) && task.status === "pending";
+        return Boolean(task.pinned) && task.status === "pending" && isTaskInDateRange(task, todayKey);
       })
       .sort(sortByDueTime);
 
