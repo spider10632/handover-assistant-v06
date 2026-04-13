@@ -1151,12 +1151,16 @@
 
     const url = cloudBase + "/v2/accounts/" + encodeURIComponent(serverId);
     try {
+      const headers = {};
+      if (state.authToken) {
+        headers.Authorization = "Bearer " + state.authToken;
+      }
       const response = await fetchWithTimeout(
         url,
         {
           method: "GET",
           cache: "no-store",
-          headers: getCurrentCloudAuthHeaders(),
+          headers: headers,
         },
         CLOUD_REQUEST_TIMEOUT_MS,
       );
