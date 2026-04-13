@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PWS 交接系統教學</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fbf9f4;
+        --panel: #ffffff;
+        --line: rgba(209, 197, 180, 0.55);
+        --gold: #c5a059;
+        --text: #1b1c19;
+        --muted: #5b584f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Manrope", "Noto Sans TC", sans-serif;
+        color: var(--text);
+        background: linear-gradient(160deg, #fbf9f4, #f5f3ee 70%, #f8f6f1);
+      }
+
+      .wrap {
+        width: min(980px, 100%);
+        margin: 0 auto;
+        padding: 22px 14px 36px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        font-family: "Noto Serif TC", serif;
+      }
+
+      h1 {
+        font-size: 1.75rem;
+      }
+
+      h2 {
+        font-size: 1.2rem;
+        margin-bottom: 10px;
+      }
+
+      .sub {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .chip {
+        border: 1px solid rgba(197, 160, 89, 0.45);
+        background: rgba(197, 160, 89, 0.12);
+        color: #6b4f1f;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      ol,
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      .kpi {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .kpi-item {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        background: #fcfaf6;
+      }
+
+      .kpi-item b {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .role-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+
+      .role-table th,
+      .role-table td {
+        border: 1px solid var(--line);
+        padding: 9px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .role-table th {
+        background: #f7f2e8;
+      }
+
+      .warn {
+        border: 1px solid rgba(188, 88, 70, 0.34);
+        background: rgba(188, 88, 70, 0.08);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 0.9rem;
+      }
+
+      .ok {
+        border: 1px solid rgba(95, 138, 109, 0.38);
+        background: rgba(95, 138, 109, 0.1);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 0.9rem;
+      }
+
+      .quick-link {
+        display: inline-block;
+        margin-top: 8px;
+        text-decoration: none;
+        color: #fff;
+        background: var(--gold);
+        border: 1px solid rgba(154, 122, 66, 0.5);
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 0.86rem;
+        font-weight: 700;
+      }
+
+      @media (max-width: 760px) {
+        .wrap {
+          padding: 12px;
+        }
+
+        .card {
+          padding: 12px;
+        }
+
+        h1 {
+          font-size: 1.35rem;
+        }
+
+        .kpi {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <h1>PWS 交接系統完整教學</h1>
+        <p class="sub">
+          適用伺服器：<b>test</b>（派單/權限/通知測試）與 <b>caesarmetro</b>（正式交接）
+        </p>
+        <div class="chips">
+          <span class="chip">登入</span>
+          <span class="chip">派單</span>
+          <span class="chip">權限分級</span>
+          <span class="chip">手機通知</span>
+          <span class="chip">Word/Excel 匯出</span>
+        </div>
+        <a class="quick-link" href="index.html">回到交接系統</a>
+      </section>
+
+      <section class="card">
+        <h2>1. 登入方式</h2>
+        <ol>
+          <li>打開系統首頁，先輸入「伺服器名稱」。</li>
+          <li>`test` 伺服器需輸入密碼登入（帳號對應角色）。</li>
+          <li>登入成功後，右上會顯示操作介面，可開始新增/查詢/派單。</li>
+        </ol>
+        <div class="ok" style="margin-top: 10px">
+          建議測試流程：先用 <b>testmanager</b> 指派任務，再用 <b>teststaff</b> 驗證接單顯示與通知。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>2. 權限分級（已實作）</h2>
+        <table class="role-table">
+          <thead>
+            <tr>
+              <th>角色</th>
+              <th>可做</th>
+              <th>限制</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>ADMIN</b></td>
+              <td>全部功能</td>
+              <td>無</td>
+            </tr>
+            <tr>
+              <td><b>MANAGER</b></td>
+              <td>全部功能（含指派）</td>
+              <td>無</td>
+            </tr>
+            <tr>
+              <td><b>STAFF</b></td>
+              <td>新增、修改、完成、查詢、看任務</td>
+              <td>不可指派、不可一鍵複製、不可置頂、不可刪除、不可匯出報表</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>3. 新增待辦與派單</h2>
+        <ol>
+          <li>在「新增交接待辦」選主分類與子分類。</li>
+          <li>填寫事項名稱、時間（可跨日）、填寫人、交接說明。</li>
+          <li>在「指派給」選擇處理人員（不會出現 admin 帳號）。</li>
+          <li>按「新增待辦」儲存。</li>
+        </ol>
+        <div class="warn" style="margin-top: 10px">
+          若「指派給」只有「未指定（公用）」：通常是登入過期或快取舊版，請重新登入並重整頁面。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>4. 當日事項與處理流程</h2>
+        <ul>
+          <li>「置頂區」顯示 pinned 任務；一般任務顯示在當日事項清單。</li>
+          <li>點「完成」會要求輸入完成人。</li>
+          <li>已完成任務會自動取消置頂並隱藏於當日待辦區（依目前規則）。</li>
+          <li>點「修改」會跳到新增區塊並帶入原內容。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>5. 日期查詢與報表匯出</h2>
+        <ol>
+          <li>在「日期查詢」可用日期、狀態、主分類、關鍵字篩選。</li>
+          <li>查詢後會展開查詢結果。</li>
+          <li>可匯出 Word/Excel（STAFF 角色會停用）。</li>
+          <li>未選日期匯出時，會依「未來待辦事項」規則輸出。</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>6. 手機版與通知（PWA）</h2>
+        <ul>
+          <li>手機開啟網站後，可加到主畫面（PWA 安裝）。</li>
+          <li>在「下一件待辦」板塊可開啟通知授權。</li>
+          <li>派單到期時，若裝置已訂閱推播，可收到網頁通知。</li>
+        </ul>
+        <div class="kpi" style="margin-top: 10px">
+          <div class="kpi-item">
+            <b>iPhone</b>
+            Safari 分享 → 加入主畫面 → 從主畫面啟動
+          </div>
+          <div class="kpi-item">
+            <b>Android</b>
+            Chrome 選單 → 安裝應用程式
+          </div>
+          <div class="kpi-item">
+            <b>通知前提</b>
+            需先授權通知且完成雲端訂閱
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>7. 常見問題（FAQ）</h2>
+        <ul>
+          <li>
+            <b>Q：MANAGER 不能指派？</b><br />
+            A：請重新登入後再試，並確認伺服器為 `test`、帳號為 manager/admin。
+          </li>
+          <li>
+            <b>Q：為什麼看不到 testorder？</b><br />
+            A：admin 已從指派清單隱藏，不可被派單。
+          </li>
+          <li>
+            <b>Q：STAFF 為何按鈕灰色？</b><br />
+            A：屬於權限限制，按鈕保留但停用為正常行為。
+          </li>
+          <li>
+            <b>Q：手機版版面亂掉？</b><br />
+            A：請關閉分頁重開，或清除瀏覽器快取後重載最新版。
+          </li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

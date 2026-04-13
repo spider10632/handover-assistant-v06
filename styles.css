@@ -219,6 +219,13 @@ body.theme-mono::before {
   padding: 0 12px;
 }
 
+.tutorial-link-btn {
+  width: auto !important;
+  padding: 7px 12px;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
 body.theme-mono .language-bar {
   border-color: rgba(122, 122, 122, 0.45);
   background: rgba(242, 242, 242, 0.92);
@@ -1420,6 +1427,12 @@ body.theme-mono .upcoming-empty {
 
   .btn {
     width: 100%;
+  }
+
+  .language-bar .tutorial-link-btn {
+    width: auto !important;
+    flex: 0 0 auto;
+    padding: 7px 10px;
   }
 
   .today-kpi-row .today-kpi-save-btn {
