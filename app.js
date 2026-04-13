@@ -167,6 +167,7 @@
       actionTranslating: "翻譯中...",
       actionShowOriginal: "顯示原文",
       actionShowTranslated: "顯示翻譯",
+      permissionDenied: "此帳號權限不足，無法執行此操作。",
       noTranslatedContent: "此內容目前無翻譯可切換。",
       owner: "填寫人",
       assignee: "指派",
@@ -272,6 +273,7 @@
       actionTranslating: "Translating...",
       actionShowOriginal: "Show Original",
       actionShowTranslated: "Show Translation",
+      permissionDenied: "Your account does not have permission for this action.",
       noTranslatedContent: "No translated content available for this field.",
       owner: "Owner",
       assignee: "Assignee",
@@ -459,6 +461,7 @@
     syncCollapsiblePanels();
     setupCategorySelectOptions();
     refreshAssigneeSelectOptions();
+    applyRolePermissionUi();
     syncUiLanguageSelect();
     if (els.queryCategory) {
       els.queryCategory.value = state.queryCategory;
@@ -656,6 +659,7 @@
     setElementPlaceholder("password-input", getUiText("passwordPlaceholder"));
     setElementPlaceholder("today-occupancy-rate", lang === "en" ? "e.g. 99.47" : "例: 99.47");
     refreshAssigneeSelectOptions();
+    applyRolePermissionUi();
     setElementText("mobile-upcoming-toggle-text", getUiText("mobileUpcomingLabel"));
     if (els.mobileAddBtn) {
       els.mobileAddBtn.setAttribute(
@@ -1011,9 +1015,46 @@
       .toLowerCase();
   }
 
+  function isStaffRole() {
+    return getCurrentAuthRole() === "staff";
+  }
+
   function canAssignToOthers() {
     const role = getCurrentAuthRole();
     return role === "admin" || role === "manager";
+  }
+
+  function canUseTaskAction(action) {
+    const normalized = String(action || "").trim().toLowerCase();
+    if (!normalized || !isStaffRole()) {
+      return true;
+    }
+    return normalized !== "copy" && normalized !== "pin" && normalized !== "delete" && normalized !== "cancel";
+  }
+
+  function canUseExportFeatures() {
+    return !isStaffRole();
+  }
+
+  function getDisabledAttr(disabled) {
+    return disabled ? ' disabled aria-disabled="true"' : "";
+  }
+
+  function showPermissionDeniedToast() {
+    showToast(getUiText("permissionDenied"));
+  }
+
+  function applyRolePermissionUi() {
+    const disableRestricted = isStaffRole();
+    if (els.taskPinned) {
+      els.taskPinned.disabled = disableRestricted;
+    }
+    if (els.exportWordBtn) {
+      els.exportWordBtn.disabled = !canUseExportFeatures();
+    }
+    if (els.exportExcelBtn) {
+      els.exportExcelBtn.disabled = !canUseExportFeatures();
+    }
   }
 
   function findAccountByUsername(username) {
@@ -1050,6 +1091,20 @@
     els.taskAssignee.innerHTML = options.join("");
 
     const currentUser = getCurrentAuthUsername();
+    if (isStaffRole()) {
+      if (currentUser && !findAccountByUsername(currentUser)) {
+        const role = getCurrentAuthRole();
+        const roleText = role ? " (" + role + ")" : "";
+        const fallbackOption = document.createElement("option");
+        fallbackOption.value = currentUser;
+        fallbackOption.textContent = currentUser + roleText;
+        els.taskAssignee.appendChild(fallbackOption);
+      }
+      els.taskAssignee.value = currentUser || "";
+      els.taskAssignee.disabled = true;
+      return;
+    }
+
     if (!canAssignToOthers() && currentUser) {
       if (!findAccountByUsername(currentUser)) {
         const role = getCurrentAuthRole();
@@ -3157,13 +3212,17 @@
     const subcategory = String(els.taskSubcategory.value || "").trim();
     const title = els.taskTitle.value.trim();
     const owner = els.taskOwner.value.trim();
-    const assignee = normalizeAccountName(els.taskAssignee ? els.taskAssignee.value : "");
+    const requestedAssignee = normalizeAccountName(els.taskAssignee ? els.taskAssignee.value : "");
+    const currentUser = getCurrentAuthUsername();
+    const assignee = canAssignToOthers()
+      ? requestedAssignee
+      : currentUser || requestedAssignee;
     const description = els.taskDescription.value.trim();
     const startDateInput = String(els.taskStartDate ? els.taskStartDate.value || "" : "").trim();
     const endDateInput = String(els.taskEndDate ? els.taskEndDate.value || "" : "").trim();
     const startAtInput = String(els.taskStartAt.value || "").trim();
     const endAtInput = String(els.taskEndAt.value || "").trim();
-    const pinned = Boolean(els.taskPinned.checked);
+    const pinned = canUseTaskAction("pin") ? Boolean(els.taskPinned.checked) : false;
     const allDay = Boolean(state.formAllDay);
     const normalizedSubcategory = normalizeSubcategory(category, subcategory);
     const range = parseTaskTimeRange(startDateInput, startAtInput, endDateInput, endAtInput, allDay);
@@ -3331,6 +3390,10 @@
   async function runTaskAction(rawAction, taskId) {
     const action = rawAction === "cancel" ? "delete" : rawAction;
     if (!action || !taskId) {
+      return;
+    }
+    if (!canUseTaskAction(action)) {
+      showPermissionDeniedToast();
       return;
     }
     const task = state.tasks.find(function (item) {
@@ -3649,6 +3712,9 @@
     const pinTag = task.pinned ? '<span class="today-pill">' + escapeHtml(getUiText("pinned")) + "</span>" : "";
     const pinBtnText = task.pinned ? getUiText("actionUnpin") : getUiText("actionPin");
     const doneBtnText = isDone ? getUiText("actionUndoComplete") : getUiText("actionComplete");
+    const copyDisabledAttr = getDisabledAttr(!canUseTaskAction("copy"));
+    const pinDisabledAttr = getDisabledAttr(!canUseTaskAction("pin"));
+    const cancelDisabledAttr = getDisabledAttr(!canUseTaskAction("delete"));
     const countdownText = formatCountdown(getTaskStartAt(task), task.allDay, isDone);
     const displayCategory = getCategoryDisplayName(task.category || getUiText("uncategorized"));
     const displaySubcategory = getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory);
@@ -3730,7 +3796,9 @@
       "</button>" +
       '<button class="action-btn action-copy" type="button" data-action="copy" data-id="' +
       escapeHtml(task.id) +
-      '">' +
+      '"' +
+      copyDisabledAttr +
+      ">" +
       getUiText("actionCopy") +
       "</button>" +
       (translationBusy || needsManualTranslate
@@ -3753,12 +3821,16 @@
       "</button>" +
       '<button class="action-btn action-cancel" type="button" data-action="cancel" data-id="' +
       escapeHtml(task.id) +
-      '">' +
+      '"' +
+      cancelDisabledAttr +
+      ">" +
       getUiText("actionCancel") +
       "</button>" +
       '<button class="action-btn action-pin" type="button" data-action="pin" data-id="' +
       escapeHtml(task.id) +
-      '">' +
+      '"' +
+      pinDisabledAttr +
+      ">" +
       pinBtnText +
       "</button>" +
       "</div>" +
@@ -3781,6 +3853,9 @@
         const statusText = isDone ? getUiText("statusDone") : getUiText("statusPending");
         const pinnedText = task.pinned ? getUiText("pinned") : "-";
         const pinBtnText = task.pinned ? getUiText("actionUnpin") : getUiText("actionPin");
+        const copyDisabledAttr = getDisabledAttr(!canUseTaskAction("copy"));
+        const pinDisabledAttr = getDisabledAttr(!canUseTaskAction("pin"));
+        const deleteDisabledAttr = getDisabledAttr(!canUseTaskAction("delete"));
         const displayCategory = getCategoryDisplayName(task.category || getUiText("uncategorized"));
         const displaySubcategoryRaw = getTaskDisplayField(task, "subcategory") || task.subcategory;
         const displaySubcategory = getSubcategoryDisplayName(displaySubcategoryRaw);
@@ -3846,7 +3921,9 @@
           "</button>" +
           '<button class="action-btn action-copy" type="button" data-action="copy" data-id="' +
           task.id +
-          '">' +
+          '"' +
+          copyDisabledAttr +
+          ">" +
           getUiText("actionCopy") +
           "</button>" +
           (translationBusy || needsManualTranslate
@@ -3869,12 +3946,16 @@
           "</button>" +
           '<button class="action-btn action-pin" type="button" data-action="pin" data-id="' +
           task.id +
-          '">' +
+          '"' +
+          pinDisabledAttr +
+          ">" +
           pinBtnText +
           "</button>" +
           '<button class="action-btn action-delete" type="button" data-action="delete" data-id="' +
           task.id +
-          '">' +
+          '"' +
+          deleteDisabledAttr +
+          ">" +
           getUiText("actionDelete") +
           "</button>" +
           "</div></td>" +
@@ -4172,6 +4253,10 @@
   }
 
   async function handleExportWord() {
+    if (!canUseExportFeatures()) {
+      showPermissionDeniedToast();
+      return;
+    }
     const context = collectExportContext();
 
     if (window.docx && window.saveAs) {
@@ -4201,6 +4286,10 @@
   }
 
   function handleExportExcel() {
+    if (!canUseExportFeatures()) {
+      showPermissionDeniedToast();
+      return;
+    }
     const context = collectExportContext();
     try {
       const tasksForExcel = context.includeDatePrefix
