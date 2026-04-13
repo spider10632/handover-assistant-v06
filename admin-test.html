@@ -581,7 +581,7 @@
             const role = String(log.actorRole || "");
             const action = String(log.action || "");
             const category = getAuditCategory(action);
-            const detailsText = formatAuditDetails(log.details);
+            const detailsText = formatAuditDetails(log.details, log.action);
             const keywordPool = (
               actor +
               "\n" +
@@ -612,7 +612,7 @@
           } else {
             els.auditBody.innerHTML = filtered
               .map(function (log) {
-                const detailsText = formatAuditDetails(log.details);
+                const detailsText = formatAuditDetails(log.details, log.action);
                 return (
                   "<tr>" +
                   "<td class=\"mono\">" +
@@ -661,26 +661,264 @@
           return "other";
         }
 
-        function formatAuditDetails(details) {
+        function formatAuditDetails(details, action) {
           if (details == null || details === "") return "-";
-          if (typeof details === "string") return details;
+
+          if (typeof details === "string") {
+            const trimmed = details.trim();
+            if (
+              (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+              (trimmed.startsWith("[") && trimmed.endsWith("]"))
+            ) {
+              try {
+                return formatAuditDetails(JSON.parse(trimmed), action);
+              } catch (_) {
+                return trimmed || "-";
+              }
+            }
+            return trimmed || "-";
+          }
+
           if (Array.isArray(details)) {
+            if (!details.length) return "-";
             return details
               .map(function (item, index) {
                 return index + 1 + ". " + detailValueToText(item);
               })
               .join("\n");
           }
-          if (typeof details === "object") {
-            const keys = Object.keys(details);
-            if (!keys.length) return "-";
-            return keys
-              .map(function (key) {
-                return key + ": " + detailValueToText(details[key]);
-              })
-              .join("\n");
+
+          if (typeof details !== "object") {
+            return String(details);
           }
-          return String(details);
+
+          if (
+            Object.prototype.hasOwnProperty.call(details, "previousAssignee") ||
+            Object.prototype.hasOwnProperty.call(details, "nextAssignee")
+          ) {
+            return formatChangeLine("指派", formatAssignee(details.previousAssignee), formatAssignee(details.nextAssignee));
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(details, "previousStatus") ||
+            Object.prototype.hasOwnProperty.call(details, "nextStatus")
+          ) {
+            return formatChangeLine("狀態", mapStatusLabel(details.previousStatus), mapStatusLabel(details.nextStatus));
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(details, "previousPinned") ||
+            Object.prototype.hasOwnProperty.call(details, "nextPinned")
+          ) {
+            return formatChangeLine("置頂", boolToLabel(details.previousPinned), boolToLabel(details.nextPinned));
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(details, "previous") ||
+            Object.prototype.hasOwnProperty.call(details, "next")
+          ) {
+            const previous = details.previous || null;
+            const next = details.next || null;
+            if (isTaskSnapshot(previous) || isTaskSnapshot(next)) {
+              return formatTaskDiff(previous, next);
+            }
+            if (isTodayOverviewSnapshot(previous) || isTodayOverviewSnapshot(next)) {
+              return formatTodayOverviewDiff(previous, next);
+            }
+            return formatChangeLine("內容", detailValueToText(previous), detailValueToText(next));
+          }
+
+          if (action === "auth_login") {
+            return "登入成功";
+          }
+
+          const keys = Object.keys(details);
+          if (!keys.length) return "-";
+          return keys
+            .map(function (key) {
+              return mapDetailKeyLabel(key) + ": " + detailValueToText(details[key]);
+            })
+            .join("\n");
+        }
+
+        function formatTaskDiff(previous, next) {
+          if (!previous && next) {
+            return ["新增事項", formatTaskSnapshot(next)].join("\n");
+          }
+          if (previous && !next) {
+            return ["刪除前事項", formatTaskSnapshot(previous)].join("\n");
+          }
+          if (!previous || !next) {
+            return "-";
+          }
+
+          const lines = [];
+          pushDiffLine(lines, "事項", normalizeEmpty(previous.title), normalizeEmpty(next.title));
+          pushDiffLine(lines, "主分類", normalizeEmpty(previous.category), normalizeEmpty(next.category));
+          pushDiffLine(lines, "子分類", normalizeEmpty(previous.subcategory), normalizeEmpty(next.subcategory));
+          pushDiffLine(lines, "填寫人", normalizeEmpty(previous.owner), normalizeEmpty(next.owner));
+          pushDiffLine(lines, "完成人", normalizeEmpty(previous.completedBy), normalizeEmpty(next.completedBy));
+          pushDiffLine(lines, "狀態", mapStatusLabel(previous.status), mapStatusLabel(next.status));
+          pushDiffLine(lines, "置頂", boolToLabel(previous.pinned), boolToLabel(next.pinned));
+          pushDiffLine(lines, "全日", boolToLabel(previous.allDay), boolToLabel(next.allDay));
+          pushDiffLine(lines, "開始時間", formatAuditDateTime(previous.startAt), formatAuditDateTime(next.startAt));
+          pushDiffLine(lines, "結束時間", formatAuditDateTime(previous.endAt), formatAuditDateTime(next.endAt));
+          pushDiffLine(lines, "內容", normalizeEmpty(previous.description), normalizeEmpty(next.description));
+
+          if (!lines.length) {
+            return "無欄位變更（可能為系統同步）";
+          }
+          return lines.join("\n");
+        }
+
+        function formatTodayOverviewDiff(previous, next) {
+          if (!previous && next) {
+            return ["今日概況（新）", formatTodayOverviewSnapshot(next)].join("\n");
+          }
+          if (previous && !next) {
+            return ["今日概況（舊）", formatTodayOverviewSnapshot(previous)].join("\n");
+          }
+          if (!previous || !next) return "-";
+
+          const lines = [];
+          pushDiffLine(lines, "日期", normalizeEmpty(previous.dateKey), normalizeEmpty(next.dateKey));
+          pushDiffLine(lines, "預進 Arr", normalizeEmpty(previous.checkin), normalizeEmpty(next.checkin));
+          pushDiffLine(lines, "預退 Dep", normalizeEmpty(previous.checkout), normalizeEmpty(next.checkout));
+          pushDiffLine(lines, "住房率 Occ", normalizeEmpty(previous.occupancy), normalizeEmpty(next.occupancy));
+          return lines.length ? lines.join("\n") : "今日概況無變更";
+        }
+
+        function formatTaskSnapshot(task) {
+          if (!task || typeof task !== "object") return "-";
+          const lines = [];
+          lines.push("事項: " + normalizeEmpty(task.title));
+          lines.push("分類: " + normalizeEmpty(task.category) + " / " + normalizeEmpty(task.subcategory));
+          lines.push("填寫人: " + normalizeEmpty(task.owner));
+          lines.push("完成人: " + normalizeEmpty(task.completedBy));
+          lines.push("狀態: " + mapStatusLabel(task.status));
+          lines.push("時間: " + formatTaskTimeRange(task));
+          lines.push("置頂: " + boolToLabel(task.pinned) + " | 全日: " + boolToLabel(task.allDay));
+          lines.push("內容: " + normalizeEmpty(task.description));
+          return lines.join("\n");
+        }
+
+        function formatTodayOverviewSnapshot(overview) {
+          if (!overview || typeof overview !== "object") return "-";
+          return [
+            "日期: " + normalizeEmpty(overview.dateKey),
+            "預進 Arr: " + normalizeEmpty(overview.checkin),
+            "預退 Dep: " + normalizeEmpty(overview.checkout),
+            "住房率 Occ: " + normalizeEmpty(overview.occupancy),
+          ].join("\n");
+        }
+
+        function formatTaskTimeRange(task) {
+          if (task && task.allDay) return "全天";
+          const start = formatAuditDateTime(task && task.startAt ? task.startAt : "");
+          const end = formatAuditDateTime(task && task.endAt ? task.endAt : "");
+          if (start !== "-" && end !== "-") return start + " 至 " + end;
+          if (start !== "-") return start;
+          if (end !== "-") return "至 " + end;
+          return "未設定";
+        }
+
+        function isTaskSnapshot(value) {
+          return (
+            value &&
+            typeof value === "object" &&
+            !Array.isArray(value) &&
+            ("title" in value ||
+              "category" in value ||
+              "subcategory" in value ||
+              "owner" in value ||
+              "status" in value ||
+              "startAt" in value ||
+              "endAt" in value)
+          );
+        }
+
+        function isTodayOverviewSnapshot(value) {
+          return (
+            value &&
+            typeof value === "object" &&
+            !Array.isArray(value) &&
+            ("checkin" in value || "checkout" in value || "occupancy" in value || "dateKey" in value)
+          );
+        }
+
+        function pushDiffLine(lines, label, previousValue, nextValue) {
+          const before = normalizeEmpty(previousValue);
+          const after = normalizeEmpty(nextValue);
+          if (before === after) return;
+          lines.push(label + ": " + before + " -> " + after);
+        }
+
+        function formatChangeLine(label, previousValue, nextValue) {
+          const before = normalizeEmpty(previousValue);
+          const after = normalizeEmpty(nextValue);
+          if (before === after) {
+            return label + ": " + after;
+          }
+          return label + ": " + before + " -> " + after;
+        }
+
+        function formatAssignee(value) {
+          const name = normalizeEmpty(value);
+          return name === "-" ? "未指定（公用）" : name;
+        }
+
+        function mapStatusLabel(status) {
+          const value = String(status || "").trim().toLowerCase();
+          if (value === "pending") return "待處理";
+          if (value === "done") return "已完成";
+          if (value === "cancelled") return "已取消";
+          if (!value) return "-";
+          return value;
+        }
+
+        function boolToLabel(value) {
+          if (value === true) return "是";
+          if (value === false) return "否";
+          if (String(value || "") === "") return "-";
+          return String(value);
+        }
+
+        function formatAuditDateTime(value) {
+          if (!value) return "-";
+          const time = new Date(value);
+          if (Number.isNaN(time.getTime())) {
+            return String(value);
+          }
+          return (
+            time.getFullYear() +
+            "/" +
+            String(time.getMonth() + 1).padStart(2, "0") +
+            "/" +
+            String(time.getDate()).padStart(2, "0") +
+            " " +
+            String(time.getHours()).padStart(2, "0") +
+            ":" +
+            String(time.getMinutes()).padStart(2, "0")
+          );
+        }
+
+        function mapDetailKeyLabel(key) {
+          const map = {
+            username: "帳號",
+            role: "角色",
+            enabled: "啟用",
+            endpoint: "推播端點",
+            passwordReset: "密碼重設",
+            previous: "變更前",
+            next: "變更後",
+            previousAssignee: "原指派",
+            nextAssignee: "新指派",
+            previousStatus: "原狀態",
+            nextStatus: "新狀態",
+            previousPinned: "原置頂",
+            nextPinned: "新置頂",
+          };
+          return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : key;
         }
 
         function detailValueToText(value) {
@@ -688,11 +926,30 @@
           if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
             return String(value);
           }
-          try {
-            return JSON.stringify(value);
-          } catch (_) {
-            return String(value);
+          if (Array.isArray(value)) {
+            return value
+              .map(function (item, index) {
+                return index + 1 + ") " + detailValueToText(item);
+              })
+              .join(" ; ");
           }
+          if (typeof value === "object") {
+            if (isTaskSnapshot(value)) return formatTaskSnapshot(value);
+            if (isTodayOverviewSnapshot(value)) return formatTodayOverviewSnapshot(value);
+            const keys = Object.keys(value);
+            if (!keys.length) return "-";
+            return keys
+              .map(function (key) {
+                return mapDetailKeyLabel(key) + "=" + detailValueToText(value[key]);
+              })
+              .join(", ");
+          }
+          return String(value);
+        }
+
+        function normalizeEmpty(value) {
+          const text = String(value == null ? "" : value).trim();
+          return text || "-";
         }
 
         async function onAccountAction(event) {
