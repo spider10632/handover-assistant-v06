@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-Hant">
   <head>
     <meta charset="UTF-8" />
@@ -93,42 +93,6 @@
         margin-top: 6px;
       }
 
-      .kpi {
-        display: grid;
-        gap: 8px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .kpi-item {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 10px;
-        background: #fcfaf6;
-      }
-
-      .kpi-item b {
-        display: block;
-        margin-bottom: 4px;
-      }
-
-      .role-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.92rem;
-      }
-
-      .role-table th,
-      .role-table td {
-        border: 1px solid var(--line);
-        padding: 9px 10px;
-        text-align: left;
-        vertical-align: top;
-      }
-
-      .role-table th {
-        background: #f7f2e8;
-      }
-
       .warn {
         border: 1px solid rgba(188, 88, 70, 0.34);
         background: rgba(188, 88, 70, 0.08);
@@ -158,6 +122,46 @@
         font-weight: 700;
       }
 
+      .guide-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 10px;
+      }
+
+      .guide-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        background: #fcfaf6;
+      }
+
+      .guide-card b {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .guide-card img {
+        width: 100%;
+        height: auto;
+        border-radius: 6px;
+        border: 1px solid rgba(209, 197, 180, 0.75);
+        background: #fff;
+      }
+
+      .guide-card p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 960px) {
+        .guide-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
       @media (max-width: 760px) {
         .wrap {
           padding: 12px;
@@ -170,10 +174,6 @@
         h1 {
           font-size: 1.35rem;
         }
-
-        .kpi {
-          grid-template-columns: 1fr;
-        }
       }
     </style>
   </head>
@@ -182,7 +182,7 @@
       <section class="card">
         <h1>PWS 交接系統完整教學</h1>
         <p class="sub">
-          適用伺服器：<b>test</b>（派單/權限/通知測試）與 <b>caesarmetro</b>（正式交接）
+          適用伺服器：<b>test</b>（派單/權限/通知測試）
         </p>
         <div class="chips">
           <span class="chip">登入</span>
@@ -198,118 +198,78 @@
         <h2>1. 登入方式</h2>
         <ol>
           <li>打開系統首頁，先輸入「伺服器名稱」。</li>
-          <li>`test` 伺服器需輸入密碼登入（帳號對應角色）。</li>
-          <li>登入成功後，右上會顯示操作介面，可開始新增/查詢/派單。</li>
+          <li><code>test</code> 伺服器需輸入密碼登入（帳號對應角色）。</li>
+          <li>登入成功後，即可開始新增、查詢、派單。</li>
         </ol>
         <div class="ok" style="margin-top: 10px">
-          建議測試流程：先用 <b>testmanager</b> 指派任務，再用 <b>teststaff</b> 驗證接單顯示與通知。
+          建議流程：先用 <b>testmanager</b> 指派任務，再用 <b>teststaff</b> 驗證接單與通知。
         </div>
       </section>
 
       <section class="card">
-        <h2>2. 權限分級（已實作）</h2>
-        <table class="role-table">
-          <thead>
-            <tr>
-              <th>角色</th>
-              <th>可做</th>
-              <th>限制</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><b>ADMIN</b></td>
-              <td>全部功能</td>
-              <td>無</td>
-            </tr>
-            <tr>
-              <td><b>MANAGER</b></td>
-              <td>全部功能（含指派）</td>
-              <td>無</td>
-            </tr>
-            <tr>
-              <td><b>STAFF</b></td>
-              <td>新增、修改、完成、查詢、看任務</td>
-              <td>不可指派、不可一鍵複製、不可置頂、不可刪除、不可匯出報表</td>
-            </tr>
-          </tbody>
-        </table>
+        <h2>2. 權限分級</h2>
+        <ul>
+          <li><b>ADMIN</b>：全部功能。</li>
+          <li><b>MANAGER</b>：全部功能（可指派）。</li>
+          <li><b>STAFF</b>：可新增/修改/完成/查詢；不可指派、置頂、刪除、一鍵複製、匯出報表。</li>
+        </ul>
       </section>
 
       <section class="card">
-        <h2>3. 新增待辦與派單</h2>
+        <h2>3. 新增待辦與指派</h2>
         <ol>
           <li>在「新增交接待辦」選主分類與子分類。</li>
-          <li>填寫事項名稱、時間（可跨日）、填寫人、交接說明。</li>
-          <li>在「指派給」選擇處理人員（不會出現 admin 帳號）。</li>
-          <li>按「新增待辦」儲存。</li>
+          <li>填寫事項名稱、時間區間（可跨日）、填寫人、交接說明。</li>
+          <li>在「指派給」選擇處理帳號。</li>
+          <li>按「新增待辦」完成建立。</li>
         </ol>
         <div class="warn" style="margin-top: 10px">
-          若「指派給」只有「未指定（公用）」：通常是登入過期或快取舊版，請重新登入並重整頁面。
+          若「指派給」只有「未指定（公用）」：請重新登入後再試，並確認你目前為 manager/admin。
         </div>
       </section>
 
       <section class="card">
-        <h2>4. 當日事項與處理流程</h2>
+        <h2>4. 手機版 PWA 圖片教學</h2>
         <ul>
-          <li>「置頂區」顯示 pinned 任務；一般任務顯示在當日事項清單。</li>
-          <li>點「完成」會要求輸入完成人。</li>
-          <li>已完成任務會自動取消置頂並隱藏於當日待辦區（依目前規則）。</li>
-          <li>點「修改」會跳到新增區塊並帶入原內容。</li>
+          <li>先將網頁加到主畫面，再啟用通知授權，才能收到派單提醒。</li>
+          <li>以下為 iPhone、Android、通知設定的操作示意圖。</li>
         </ul>
-      </section>
 
-      <section class="card">
-        <h2>5. 日期查詢與報表匯出</h2>
-        <ol>
-          <li>在「日期查詢」可用日期、狀態、主分類、關鍵字篩選。</li>
-          <li>查詢後會展開查詢結果。</li>
-          <li>可匯出 Word/Excel（STAFF 角色會停用）。</li>
-          <li>未選日期匯出時，會依「未來待辦事項」規則輸出。</li>
-        </ol>
-      </section>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <b>iPhone（Safari）</b>
+            <img src="assets/tutorial/pwa-iphone.png" alt="iPhone PWA 安裝步驟" />
+            <p>點「分享」→「加入主畫面」→ 從主畫面圖示開啟系統。</p>
+          </article>
 
-      <section class="card">
-        <h2>6. 手機版與通知（PWA）</h2>
-        <ul>
-          <li>手機開啟網站後，可加到主畫面（PWA 安裝）。</li>
-          <li>在「下一件待辦」板塊可開啟通知授權。</li>
-          <li>派單到期時，若裝置已訂閱推播，可收到網頁通知。</li>
-        </ul>
-        <div class="kpi" style="margin-top: 10px">
-          <div class="kpi-item">
-            <b>iPhone</b>
-            Safari 分享 → 加入主畫面 → 從主畫面啟動
-          </div>
-          <div class="kpi-item">
-            <b>Android</b>
-            Chrome 選單 → 安裝應用程式
-          </div>
-          <div class="kpi-item">
-            <b>通知前提</b>
-            需先授權通知且完成雲端訂閱
-          </div>
+          <article class="guide-card">
+            <b>Android（Chrome）</b>
+            <img src="assets/tutorial/pwa-android.png" alt="Android PWA 安裝步驟" />
+            <p>右上角選單 →「安裝應用程式」或「加入主畫面」。</p>
+          </article>
+
+          <article class="guide-card">
+            <b>通知授權</b>
+            <img src="assets/tutorial/pwa-notify.png" alt="PWA 通知授權步驟" />
+            <p>登入後在系統內按「通知開啟」，瀏覽器跳窗請按「允許」。</p>
+          </article>
         </div>
       </section>
 
       <section class="card">
-        <h2>7. 常見問題（FAQ）</h2>
+        <h2>5. 常見問題（FAQ）</h2>
         <ul>
           <li>
             <b>Q：MANAGER 不能指派？</b><br />
-            A：請重新登入後再試，並確認伺服器為 `test`、帳號為 manager/admin。
+            A：重新登入後再試，並確認登入的是 <code>test</code> 伺服器且角色為 manager/admin。
           </li>
           <li>
-            <b>Q：為什麼看不到 testorder？</b><br />
-            A：admin 已從指派清單隱藏，不可被派單。
+            <b>Q：STAFF 按鈕為灰色？</b><br />
+            A：這是權限限制，屬於正常行為。
           </li>
           <li>
-            <b>Q：STAFF 為何按鈕灰色？</b><br />
-            A：屬於權限限制，按鈕保留但停用為正常行為。
-          </li>
-          <li>
-            <b>Q：手機版版面亂掉？</b><br />
-            A：請關閉分頁重開，或清除瀏覽器快取後重載最新版。
+            <b>Q：手機畫面排版跑掉？</b><br />
+            A：請先強制重整（清除快取）後再重新開啟頁面。
           </li>
         </ul>
       </section>
