@@ -32,7 +32,7 @@
   const PUSH_SERVICE_WORKER_FILE = "sw.js";
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
   const BACKUP_TYPE = "handover-backup";
-  const BACKUP_VERSION = "0.95";
+  const BACKUP_VERSION = "1.0";
   const UI_LANGUAGE_STORAGE_KEY = "handover_ui_language_v1";
   const DEFAULT_UI_LANGUAGE = "zh";
   const REMINDER_CHECK_MS = 30 * 1000;
