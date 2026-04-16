@@ -91,6 +91,29 @@ async function showPendingPushEvents() {
   }
 }
 
+async function notifyClientsForceRefresh() {
+  const windowClients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of windowClients) {
+    if (!client || typeof client.postMessage !== "function") {
+      continue;
+    }
+    try {
+      client.postMessage({ type: "HANDOVER_FORCE_REFRESH" });
+    } catch (error) {
+      // ignore postMessage failures
+    }
+  }
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, Number(ms) || 0));
+  });
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
 });
@@ -130,6 +153,7 @@ self.addEventListener("notificationclick", (event) => {
           try {
             if (client.url === targetUrl) {
               await client.focus();
+              await notifyClientsForceRefresh();
               return;
             }
           } catch (error) {
@@ -142,6 +166,7 @@ self.addEventListener("notificationclick", (event) => {
           try {
             await client.navigate(targetUrl);
             await client.focus();
+            await notifyClientsForceRefresh();
             return;
           } catch (error) {
             // ignore and try openWindow fallback
@@ -150,6 +175,8 @@ self.addEventListener("notificationclick", (event) => {
       }
       if (self.clients.openWindow) {
         await self.clients.openWindow(targetUrl);
+        await waitMs(220);
+        await notifyClientsForceRefresh();
       }
     })(),
   );

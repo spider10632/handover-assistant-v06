@@ -29,6 +29,7 @@
   const CLOUD_REQUEST_TIMEOUT_MS = 12000;
   const CLOUD_PUSH_DEBOUNCE_MS = 450;
   const CLOUD_MERGE_PULL_INTERVAL_MS = 20000;
+  const CLOUD_PULL_INTERVAL_MS = 1000;
   const PUSH_SYNC_INTERVAL_MS = 30000;
   const PUSH_SERVICE_WORKER_FILE = "sw.js";
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
@@ -421,8 +422,12 @@
     cloudPushInFlight: false,
     cloudPushQueued: false,
     cloudMutePush: false,
+    cloudPullTimer: null,
+    cloudPullInFlight: false,
+    cloudPullQueued: false,
     cloudLastErrorAt: 0,
     cloudLastMergeReadAt: 0,
+    cloudLastPullAt: 0,
     deletedTaskIds: {},
     showOriginalByTaskId: {},
     translatingTaskIds: {},
@@ -489,6 +494,7 @@
       startReminderLoop();
       startCountdownLoop();
       startPushSyncLoop();
+      startCloudPullLoop();
       initCloudSync();
     };
     renderAll();
@@ -1534,6 +1540,60 @@
     }, PUSH_SYNC_INTERVAL_MS);
   }
 
+  function startCloudPullLoop() {
+    if (state.cloudPullTimer) {
+      clearInterval(state.cloudPullTimer);
+      state.cloudPullTimer = null;
+    }
+    state.cloudPullTimer = setInterval(function () {
+      if (document.hidden) {
+        return;
+      }
+      triggerCloudPull({
+        minGapMs: CLOUD_PULL_INTERVAL_MS - 80,
+      });
+    }, CLOUD_PULL_INTERVAL_MS);
+  }
+
+  async function triggerCloudPull(options) {
+    const url = getCurrentCloudUrl();
+    if (!url || !state.cloudInitDone) {
+      return false;
+    }
+    const opts = options && typeof options === "object" ? options : {};
+    const minGapMs = Number.isFinite(opts.minGapMs) ? Math.max(0, Number(opts.minGapMs)) : 0;
+    const force = Boolean(opts.force);
+    const now = Date.now();
+    if (!force && now - Number(state.cloudLastPullAt || 0) < minGapMs) {
+      return false;
+    }
+    if (state.cloudPullInFlight) {
+      state.cloudPullQueued = true;
+      return false;
+    }
+    state.cloudPullInFlight = true;
+    try {
+      const changed = await pullCloudBackupAndMerge();
+      state.cloudLastPullAt = Date.now();
+      return changed;
+    } catch (error) {
+      console.error("triggerCloudPull error", error);
+      if (Date.now() - state.cloudLastErrorAt > 10000) {
+        state.cloudLastErrorAt = Date.now();
+        showToast("雲端同步延遲，稍後重試。");
+      }
+      return false;
+    } finally {
+      state.cloudPullInFlight = false;
+      if (state.cloudPullQueued) {
+        state.cloudPullQueued = false;
+        setTimeout(function () {
+          triggerCloudPull({ force: true });
+        }, 120);
+      }
+    }
+  }
+
   function buildCloudTranslateUrl(baseUrl, serverId) {
     const base = normalizeCloudApiBase(baseUrl);
     if (!base || !serverId) {
@@ -1712,7 +1772,12 @@
       },
         imported,
       );
-    applyImportedBackup(merged, true);
+    state.cloudMutePush = true;
+    try {
+      applyImportedBackup(merged, true);
+    } finally {
+      state.cloudMutePush = false;
+    }
     state.cloudLastMergeReadAt = Date.now();
     return true;
   }
@@ -2589,13 +2654,29 @@
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) {
         checkReminders();
+        triggerCloudPull({ force: true });
       }
     });
+    window.addEventListener("focus", function () {
+      triggerCloudPull({ force: true });
+    });
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    }
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape" && state.mobileUpcomingOpen) {
         handleMobileUpcomingClose();
       }
     });
+  }
+
+  function handleServiceWorkerMessage(event) {
+    const data = event && event.data && typeof event.data === "object" ? event.data : null;
+    if (!data || data.type !== "HANDOVER_FORCE_REFRESH") {
+      return;
+    }
+    triggerCloudPull({ force: true });
+    checkReminders();
   }
 
   function handleUiLanguageChange() {
