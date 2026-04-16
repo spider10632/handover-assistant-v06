@@ -1027,6 +1027,22 @@
     return role === "admin" || role === "manager";
   }
 
+  function canViewTaskByAssignee(task) {
+    const assignee = normalizeAccountName(task && task.assignee ? task.assignee : "");
+    if (!assignee) {
+      return true;
+    }
+    const role = getCurrentAuthRole();
+    if (role === "admin" || role === "manager") {
+      return true;
+    }
+    const currentUser = getCurrentAuthUsername();
+    if (!currentUser) {
+      return true;
+    }
+    return assignee === currentUser;
+  }
+
   function canUseTaskAction(action) {
     const normalized = String(action || "").trim().toLowerCase();
     if (!normalized || !isStaffRole()) {
@@ -4011,7 +4027,7 @@
 
     state.tasks
       .filter(function (task) {
-        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay;
+        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay && canViewTaskByAssignee(task);
       })
       .sort(sortByDueTime)
       .forEach(function (task) {
@@ -4166,7 +4182,7 @@
 
     const pending = state.tasks
       .filter(function (task) {
-        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay;
+        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay && canViewTaskByAssignee(task);
       })
       .sort(sortByDueTime);
 
