@@ -27,7 +27,8 @@
       ? window.HANDOVER_CLOUD_API_BASE.trim()
       : "";
   const CLOUD_REQUEST_TIMEOUT_MS = 12000;
-  const CLOUD_PUSH_DEBOUNCE_MS = 1200;
+  const CLOUD_PUSH_DEBOUNCE_MS = 450;
+  const CLOUD_MERGE_PULL_INTERVAL_MS = 20000;
   const PUSH_SYNC_INTERVAL_MS = 30000;
   const PUSH_SERVICE_WORKER_FILE = "sw.js";
   const LEGACY_MIGRATION_DONE_KEY = "handover_legacy_kvdb_migration_done_v1";
@@ -421,6 +422,7 @@
     cloudPushQueued: false,
     cloudMutePush: false,
     cloudLastErrorAt: 0,
+    cloudLastMergeReadAt: 0,
     deletedTaskIds: {},
     showOriginalByTaskId: {},
     translatingTaskIds: {},
@@ -1611,7 +1613,7 @@
         await migrateLegacyKvdbToCloud();
       }
       state.cloudInitDone = true;
-      await pushCloudBackupNow();
+      await pushCloudBackupNow({ forceMergeRead: true });
       showToast("已連線雲端資料庫。");
       ensureCloudPushSubscription(getCurrentServerConfig(), {
         requestPermission: false,
@@ -1711,6 +1713,7 @@
         imported,
       );
     applyImportedBackup(merged, true);
+    state.cloudLastMergeReadAt = Date.now();
     return true;
   }
 
@@ -1725,11 +1728,11 @@
     }
     state.cloudPushTimer = setTimeout(function () {
       state.cloudPushTimer = null;
-      pushCloudBackupNow();
+      pushCloudBackupNow({ forceMergeRead: false });
     }, wait);
   }
 
-  async function pushCloudBackupNow() {
+  async function pushCloudBackupNow(options) {
     const url = getCurrentCloudUrl();
     if (!url || !state.cloudInitDone) {
       return false;
@@ -1740,6 +1743,12 @@
     }
     state.cloudPushInFlight = true;
     try {
+      const opts = options && typeof options === "object" ? options : {};
+      const now = Date.now();
+      const forceMergeRead = Boolean(opts.forceMergeRead);
+      const shouldMergeRead =
+        forceMergeRead || now - Number(state.cloudLastMergeReadAt || 0) >= CLOUD_MERGE_PULL_INTERVAL_MS;
+
       let merged = {
         tasks: state.tasks,
         todayOverview: state.todayOverview,
@@ -1747,29 +1756,34 @@
       };
       const currentServerId = state.currentServerId || DEFAULT_SERVER_ID;
 
-      const existingResponse = await fetchWithTimeout(
-        url,
-        { method: "GET", cache: "no-store", headers: getCurrentCloudAuthHeaders() },
-        CLOUD_REQUEST_TIMEOUT_MS,
-      );
-      if (existingResponse.ok) {
-        const existingRaw = await existingResponse.text();
-        if (existingRaw) {
-          const existingParsed = JSON.parse(existingRaw);
-          const imported = parseBackupPayload(extractCloudPayload(existingParsed));
-          if (imported && imported.serverId === currentServerId) {
-            merged = mergeBackupState(merged, imported, { preferBaseOverview: true });
+      if (shouldMergeRead) {
+        const existingResponse = await fetchWithTimeout(
+          url,
+          { method: "GET", cache: "no-store", headers: getCurrentCloudAuthHeaders() },
+          CLOUD_REQUEST_TIMEOUT_MS,
+        );
+        if (existingResponse.ok) {
+          const existingRaw = await existingResponse.text();
+          if (existingRaw) {
+            const existingParsed = JSON.parse(existingRaw);
+            const imported = parseBackupPayload(extractCloudPayload(existingParsed));
+            if (imported && imported.serverId === currentServerId) {
+              merged = mergeBackupState(merged, imported, { preferBaseOverview: true });
+            }
           }
+        } else if (existingResponse.status !== 404) {
+          throw new Error("cloud read-before-write failed: " + existingResponse.status);
         }
-      } else if (existingResponse.status !== 404) {
-        throw new Error("cloud read-before-write failed: " + existingResponse.status);
+        state.cloudLastMergeReadAt = Date.now();
       }
 
-      state.cloudMutePush = true;
-      try {
-        applyImportedBackup(merged, true);
-      } finally {
-        state.cloudMutePush = false;
+      if (shouldMergeRead) {
+        state.cloudMutePush = true;
+        try {
+          applyImportedBackup(merged, true);
+        } finally {
+          state.cloudMutePush = false;
+        }
       }
 
       const payload = {
@@ -2180,23 +2194,49 @@
     if (!task || typeof task !== "object") {
       return { changed: false, hasError: false };
     }
-    let changed = false;
-    let hasError = false;
     const targets = ["zh", "en"];
+    const results = await Promise.allSettled(
+      targets.map(async function (target) {
+        try {
+          return await translateTaskDescriptionForLanguage(task, target, { force: true });
+        } catch (error) {
+          console.error("cacheTaskTranslationsOnSave error", target, error);
+          throw error;
+        }
+      }),
+    );
+    const changed = results.some(function (result) {
+      return result.status === "fulfilled" && Boolean(result.value);
+    });
+    const hasError = results.some(function (result) {
+      return result.status === "rejected";
+    });
+    return { changed, hasError };
+  }
 
-    for (const target of targets) {
+  function scheduleTaskTranslationCache(task) {
+    if (!task || !task.id || isTaskTranslationInProgress(task.id)) {
+      return;
+    }
+    setTaskTranslationInProgress(task.id, true);
+    (async function () {
+      let result = { changed: false, hasError: false };
       try {
-        const updated = await translateTaskDescriptionForLanguage(task, target, { force: true });
-        if (updated) {
-          changed = true;
+        result = await cacheTaskTranslationsOnSave(task);
+        if (result.changed) {
+          touchTask(task);
+          saveTasks();
         }
       } catch (error) {
-        hasError = true;
-        console.error("cacheTaskTranslationsOnSave error", target, error);
+        result.hasError = true;
+        console.error("scheduleTaskTranslationCache error", error);
+      } finally {
+        setTaskTranslationInProgress(task.id, false);
       }
-    }
-
-    return { changed, hasError };
+      if (result.changed) {
+        renderAll();
+      }
+    })();
   }
 
   async function handleTranslateSingleTask(task) {
@@ -2645,7 +2685,7 @@
       showToast("已儲存（本機）。");
       return;
     }
-    const ok = await pushCloudBackupNow();
+    const ok = await pushCloudBackupNow({ forceMergeRead: true });
     showToast(ok ? "已儲存到雲端。" : "已儲存，本機成功，雲端稍後同步。");
   }
 
@@ -3309,10 +3349,8 @@
       task.assignee = assignee;
       task.description = description;
       const noteChanged = previousDescription !== description;
-      let translateResult = { changed: false, hasError: false };
       if (noteChanged) {
         task.translations = {};
-        translateResult = await cacheTaskTranslationsOnSave(task);
       }
       task.startAt = range.startAtIso;
       task.endAt = range.endAtIso;
@@ -3324,14 +3362,17 @@
       }
       touchTask(task);
       state.tasks.sort(sortByDueTime);
-      saveTasks();
       renderAll();
+      saveTasks();
       resetTaskForm();
+      if (noteChanged) {
+        scheduleTaskTranslationCache(task);
+      }
       showToast(
-        translateResult.hasError
+        noteChanged
           ? isEnglishUi()
-            ? 'Task updated. Translation may be incomplete, use "Translate This".'
-            : "待辦已修改，翻譯若未完成可按「翻譯此筆」。"
+            ? "Task updated. Translation syncing in background."
+            : "待辦已修改，翻譯背景同步中。"
           : isEnglishUi()
             ? "Task updated."
             : "待辦已修改。",
@@ -3360,18 +3401,20 @@
       createdAt: nowIso,
       updatedAt: nowIso,
     };
-    const translateResult = await cacheTaskTranslationsOnSave(newTask);
     state.tasks.push(newTask);
 
     state.tasks.sort(sortByDueTime);
-    saveTasks();
     renderAll();
+    saveTasks();
     resetTaskForm();
+    if (description) {
+      scheduleTaskTranslationCache(newTask);
+    }
     showToast(
-      translateResult.hasError
+      description
         ? isEnglishUi()
-          ? 'Task added. Translation may be incomplete, use "Translate This".'
-          : "待辦已新增，翻譯若未完成可按「翻譯此筆」。"
+          ? "Task added. Translation syncing in background."
+          : "待辦已新增，翻譯背景同步中。"
         : isEnglishUi()
           ? "Task added."
           : "待辦已新增。",
@@ -3478,8 +3521,8 @@
         task.completedBy = "";
       }
       touchTask(task);
-      saveTasks();
       renderAll();
+      saveTasks();
       showToast(
         task.status === "done"
           ? normalizeUiLanguage(state.uiLanguage) === "en"
@@ -3515,8 +3558,8 @@
     if (action === "pin") {
       task.pinned = !task.pinned;
       touchTask(task);
-      saveTasks();
       renderAll();
+      saveTasks();
       showToast(
         task.pinned
           ? normalizeUiLanguage(state.uiLanguage) === "en"
@@ -3551,9 +3594,9 @@
         resetTaskForm();
       }
       state.deletedTaskIds[taskId] = new Date().toISOString();
+      renderAll();
       saveTasks();
       saveDeletedTaskIds();
-      renderAll();
       showToast(normalizeUiLanguage(state.uiLanguage) === "en" ? "Task deleted." : "待辦已刪除。");
     }
   }
@@ -4722,6 +4765,13 @@
 
   function applyImportedBackup(imported, silent) {
     if (!imported || typeof imported !== "object") {
+      return false;
+    }
+    if (
+      imported.tasks === state.tasks &&
+      imported.todayOverview === state.todayOverview &&
+      imported.deletedTaskIds === state.deletedTaskIds
+    ) {
       return false;
     }
     const normalizedImportedDeleted = normalizeDeletedTaskIds(imported.deletedTaskIds);
