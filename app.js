@@ -113,6 +113,7 @@
       taskTitleLabel: "事項名稱",
       taskTimeLabel: "時間（可跨日：起日/起時 至 迄日/迄時，可留空）",
       timeRangeSep: "至",
+      timeNow: "立即",
       allDay: "全日",
       taskOwnerLabel: "填寫人",
       taskAssigneeLabel: "指派給",
@@ -219,6 +220,7 @@
       taskTitleLabel: "Task Title",
       taskTimeLabel: "Time (cross-day allowed: start date/time to end date/time, optional)",
       timeRangeSep: "to",
+      timeNow: "Now",
       allDay: "All Day",
       taskOwnerLabel: "Owner",
       taskAssigneeLabel: "Assign To",
@@ -631,6 +633,7 @@
     setElementText("task-title-label", getUiText("taskTitleLabel"));
     setElementText("task-time-label", getUiText("taskTimeLabel"));
     setElementText("time-range-sep", getUiText("timeRangeSep"));
+    setElementText("time-now-btn", getUiText("timeNow"));
     setElementText("all-day-btn", getUiText("allDay"));
     setElementText("task-owner-label", getUiText("taskOwnerLabel"));
     setElementText("task-assignee-label", getUiText("taskAssigneeLabel"));
@@ -2387,6 +2390,7 @@
     els.taskEndDate = document.getElementById("task-end-date");
     els.taskStartAt = document.getElementById("task-start-at");
     els.taskEndAt = document.getElementById("task-end-at");
+    els.timeNowBtn = document.getElementById("time-now-btn");
     els.allDayBtn = document.getElementById("all-day-btn");
     els.taskPinned = document.getElementById("task-pinned");
     els.taskDescription = document.getElementById("task-description");
@@ -2440,6 +2444,9 @@
     els.taskCategory.addEventListener("change", updateSubcategoryOptions);
     els.taskSubcategory.addEventListener("change", updateFormLockState);
     els.allDayBtn.addEventListener("click", toggleAllDayMode);
+    if (els.timeNowBtn) {
+      els.timeNowBtn.addEventListener("click", applyNowTime);
+    }
     if (els.taskStartAt) {
       els.taskStartAt.addEventListener("input", handleTimeDigitsInput);
       els.taskStartAt.addEventListener("blur", handleTimeDigitsBlur);
@@ -2831,6 +2838,26 @@
 
   function toggleAllDayMode() {
     setAllDayMode(!state.formAllDay);
+  }
+
+  function applyNowTime() {
+    const now = new Date();
+    if (state.formAllDay) {
+      setAllDayMode(false);
+    }
+    if (els.taskStartDate) {
+      els.taskStartDate.value = toDateKey(now);
+    }
+    if (els.taskStartAt) {
+      els.taskStartAt.value = formatTime(now, false);
+    }
+    if (els.taskEndDate) {
+      els.taskEndDate.value = "";
+    }
+    if (els.taskEndAt) {
+      els.taskEndAt.value = "";
+    }
+    apply24HourInputMode();
   }
 
   function setAllDayMode(enabled) {

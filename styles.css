@@ -476,13 +476,25 @@ textarea {
   font-weight: 700;
 }
 
+.time-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.time-now-btn,
 .all-day-btn {
   white-space: nowrap;
-  min-width: 64px;
+  min-width: 62px;
   flex: 0 0 auto;
   align-self: center;
   padding-left: 10px;
   padding-right: 10px;
+}
+
+.time-now-btn:hover {
+  background: #eae8e3;
 }
 
 .all-day-btn.active {
@@ -1560,6 +1572,16 @@ body.theme-mono .upcoming-empty {
 
   .due-input-row .all-day-btn {
     grid-column: auto;
+  }
+
+  .due-input-row .time-action-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .due-input-row .time-action-group .btn {
     width: 100%;
   }
 
