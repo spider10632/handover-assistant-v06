@@ -39,6 +39,7 @@
   const DEFAULT_UI_LANGUAGE = "zh";
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
+  const OVERDUE_NOTICE_KEEP_MS = 60 * 60 * 1000;
   const TOAST_MS = 3000;
   const MOBILE_MAX_WIDTH = 760;
   const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "預訂", "餐飲部", "待回覆信件", "郵寄", "行政", "公告", "遺留物"];
@@ -4157,7 +4158,9 @@
       .forEach(function (task) {
         const diffMs = new Date(getTaskStartAt(task)).getTime() - now;
         if (diffMs <= 0) {
-          dueNow.push(task);
+          if (diffMs >= -OVERDUE_NOTICE_KEEP_MS) {
+            dueNow.push(task);
+          }
           return;
         }
         if (diffMs <= 30 * 60 * 1000) {
@@ -4317,7 +4320,7 @@
     const now = Date.now();
     const dueTask = pending.find(function (task) {
       const dueMs = new Date(getTaskStartAt(task)).getTime();
-      return !task.remindedAt && dueMs <= now;
+      return !task.remindedAt && dueMs <= now && dueMs >= now - OVERDUE_NOTICE_KEEP_MS;
     });
 
     if (!dueTask) {
@@ -4347,7 +4350,7 @@
       const categoryText =
         getCategoryDisplayName(task.category) +
         (task.subcategory ? "/" + getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory) : "");
-      new Notification(normalizeUiLanguage(state.uiLanguage) === "en" ? "Handover Reminder" : "工作交接提醒", {
+      const notification = new Notification(normalizeUiLanguage(state.uiLanguage) === "en" ? "Handover Reminder" : "工作交接提醒", {
         body:
           taskTitle +
           (normalizeUiLanguage(state.uiLanguage) === "en" ? " (Category: " : "（分類：") +
@@ -4356,6 +4359,13 @@
           (task.owner || getUiText("notFilled")) +
           (normalizeUiLanguage(state.uiLanguage) === "en" ? ")" : "）"),
       });
+      setTimeout(function () {
+        try {
+          notification.close();
+        } catch (error) {
+          // ignore close failure
+        }
+      }, OVERDUE_NOTICE_KEEP_MS);
     }
   }
 
