@@ -48,7 +48,7 @@
     包裹代收: ["團體", "散客", "其他"],
     車輛安排: ["禮賓車", "計程車", "其他"],
     大廳: ["行李寄放", "其他"],
-    客房: ["下行李", "房務相關事項", "送房", "佈置", "其他"],
+    客房: ["房內取行李", "房務相關事項", "送房", "佈置", "其他"],
     預訂: ["餐廳", "車票", "其他"],
     行政: ["叫貨領貨", "人事相關", "其他"],
     遺留物: ["待寄", "待取"],
@@ -80,7 +80,8 @@
       禮賓車: "Limousine",
       計程車: "Taxi",
       行李寄放: "Luggage Storage",
-      下行李: "Luggage Delivery",
+      下行李: "In-room Luggage Pickup",
+      房內取行李: "In-room Luggage Pickup",
       房務相關事項: "Housekeeping",
       送房: "In-room Delivery",
       佈置: "Decoration",
@@ -6083,6 +6084,9 @@
     let value = String(raw || "").trim();
     if (category === "廣場" && value === "工程") {
       value = "其他";
+    }
+    if (category === "客房" && value === "下行李") {
+      value = "房內取行李";
     }
     const options = getSubcategoryOptions(category);
     if (options.length === 0) {
