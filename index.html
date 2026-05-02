@@ -304,6 +304,33 @@
             </div>
           </div>
         </section>
+
+        <section id="assignment-watch-panel" class="panel panel-collapsible is-collapsed hidden">
+          <div class="panel-heading">
+            <h2 class="section-title section-title-sm">
+              <i class="ti ti-radar-2 title-icon" aria-hidden="true"></i>
+              <span id="assignment-watch-title">指派監視</span>
+            </h2>
+            <div class="panel-heading-right">
+              <button
+                id="toggle-assignment-watch-panel"
+                class="btn btn-ghost panel-toggle-btn"
+                type="button"
+                data-target="assignment-watch-panel"
+                aria-expanded="false"
+              >
+                展開
+              </button>
+            </div>
+          </div>
+
+          <div class="panel-body">
+            <p id="assignment-watch-summary" class="assignment-watch-summary">目前沒有逾時指派事項。</p>
+            <ul id="assignment-watch-list" class="assignment-watch-list">
+              <li class="assignment-watch-empty">目前沒有逾時 5 分鐘以上的指派待辦。</li>
+            </ul>
+          </div>
+        </section>
       </div>
 
       <section class="panel export-panel animate-up delay-4">

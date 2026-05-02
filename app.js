@@ -40,6 +40,8 @@
   const REMINDER_CHECK_MS = 30 * 1000;
   const COUNTDOWN_REFRESH_MS = 1000;
   const OVERDUE_NOTICE_KEEP_MS = 60 * 60 * 1000;
+  const ASSIGN_WATCH_5_MIN_MS = 5 * 60 * 1000;
+  const ASSIGN_WATCH_10_MIN_MS = 10 * 60 * 1000;
   const TOAST_MS = 3000;
   const MOBILE_MAX_WIDTH = 760;
   const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "預訂", "餐飲部", "待回覆信件", "郵寄", "行政", "公告", "遺留物"];
@@ -130,6 +132,15 @@
       cancelEdit: "取消修改",
       queryPanelTitle: "日期查詢",
       resultPanelTitle: "查詢結果",
+      assignmentWatchTitle: "指派監視",
+      assignmentWatchSummaryEmpty: "目前沒有逾時指派事項。",
+      assignmentWatchListEmpty: "目前沒有逾時 5 分鐘以上的指派待辦。",
+      assignmentWatchSummary: "逾時 10 分鐘 {count10} 筆，逾時 5 分鐘 {count5} 筆。",
+      assignmentWatchTag10: "逾時 10 分鐘",
+      assignmentWatchTag5: "逾時 5 分鐘",
+      assignmentWatchOverdueLabel: "逾時",
+      assignmentWatchReminderTitle: "指派監視提醒",
+      assignmentWatchReminderText: "待辦「{title}」已逾時 {minutes} 分鐘（指派：{assignee}）。",
       taskListFilterLabel: "篩選",
       exportDateLabel: "匯出日期",
       exportStatusLabel: "匯出狀態",
@@ -237,6 +248,15 @@
       cancelEdit: "Cancel Edit",
       queryPanelTitle: "Date Query",
       resultPanelTitle: "Query Result",
+      assignmentWatchTitle: "Assignment Watch",
+      assignmentWatchSummaryEmpty: "No overdue assigned tasks.",
+      assignmentWatchListEmpty: "No assigned tasks overdue by 5+ minutes.",
+      assignmentWatchSummary: "Overdue 10 min: {count10}, overdue 5 min: {count5}.",
+      assignmentWatchTag10: "Overdue 10 min",
+      assignmentWatchTag5: "Overdue 5 min",
+      assignmentWatchOverdueLabel: "Overdue",
+      assignmentWatchReminderTitle: "Assignment Watch",
+      assignmentWatchReminderText: 'Task "{title}" is overdue by {minutes} min (Assignee: {assignee}).',
       taskListFilterLabel: "Filter",
       exportDateLabel: "Export Date",
       exportStatusLabel: "Export Status",
@@ -655,6 +675,7 @@
     setElementText("cancel-edit-btn", getUiText("cancelEdit"));
     setElementText("query-panel-title", getUiText("queryPanelTitle"));
     setElementText("result-panel-title", getUiText("resultPanelTitle"));
+    setElementText("assignment-watch-title", getUiText("assignmentWatchTitle"));
     setElementText("task-list-filter-label", getUiText("taskListFilterLabel"));
     setElementText("export-date-label", getUiText("exportDateLabel"));
     setElementText("export-status-label", getUiText("exportStatusLabel"));
@@ -1083,6 +1104,9 @@
     }
     if (els.exportExcelBtn) {
       els.exportExcelBtn.disabled = !canUseExportFeatures();
+    }
+    if (els.assignmentWatchPanel) {
+      els.assignmentWatchPanel.classList.toggle("hidden", !canAssignToOthers());
     }
   }
 
@@ -2529,6 +2553,9 @@
     els.clearSearchBtn = document.getElementById("clear-search-btn");
     els.queryResultText = document.getElementById("query-result-text");
     els.tableBody = document.getElementById("task-table-body");
+    els.assignmentWatchPanel = document.getElementById("assignment-watch-panel");
+    els.assignmentWatchSummary = document.getElementById("assignment-watch-summary");
+    els.assignmentWatchList = document.getElementById("assignment-watch-list");
     els.todayTaskSummary = document.getElementById("today-task-summary");
     els.todayPinnedList = document.getElementById("today-pinned-list") || document.querySelector(".today-pinned-list");
     els.todayTaskList = document.getElementById("today-task-list");
@@ -3349,6 +3376,8 @@
     const status = input.status === "done" ? "done" : "pending";
     const allDay = Boolean(input.allDay);
     const remindedAtMs = input.remindedAt ? new Date(input.remindedAt).getTime() : Number.NaN;
+    const assigneeRemind5AtMs = input.assigneeRemind5At ? new Date(input.assigneeRemind5At).getTime() : Number.NaN;
+    const assigneeRemind10AtMs = input.assigneeRemind10At ? new Date(input.assigneeRemind10At).getTime() : Number.NaN;
     const createdAtMs = input.createdAt ? new Date(input.createdAt).getTime() : Number.NaN;
     const updatedAtMs = input.updatedAt ? new Date(input.updatedAt).getTime() : Number.NaN;
     const createdAtIso = Number.isNaN(createdAtMs) ? new Date().toISOString() : new Date(createdAtMs).toISOString();
@@ -3370,6 +3399,8 @@
       status: status,
       pinned: Boolean(input.pinned),
       remindedAt: Number.isNaN(remindedAtMs) ? null : new Date(remindedAtMs).toISOString(),
+      assigneeRemind5At: Number.isNaN(assigneeRemind5AtMs) ? null : new Date(assigneeRemind5AtMs).toISOString(),
+      assigneeRemind10At: Number.isNaN(assigneeRemind10AtMs) ? null : new Date(assigneeRemind10AtMs).toISOString(),
       createdAt: createdAtIso,
       updatedAt: Number.isNaN(updatedAtMs) ? createdAtIso : new Date(updatedAtMs).toISOString(),
     };
@@ -3425,6 +3456,10 @@
         return;
       }
       const previousDescription = String(task.description || "").trim();
+      const previousAssignee = normalizeAccountName(task.assignee || "");
+      const previousStartAt = getTaskStartAt(task) || null;
+      const previousEndAt = getTaskEndAt(task) || null;
+      const previousAllDay = Boolean(task.allDay);
       task.category = category;
       task.subcategory = normalizedSubcategory;
       task.title = title;
@@ -3440,8 +3475,18 @@
       task.dueAt = range.startAtIso;
       task.allDay = allDay;
       task.pinned = pinned;
+      const watchScopeChanged =
+        previousAssignee !== assignee ||
+        previousStartAt !== range.startAtIso ||
+        previousEndAt !== range.endAtIso ||
+        previousAllDay !== allDay;
       if (task.status === "pending") {
         task.remindedAt = null;
+        if (watchScopeChanged) {
+          clearAssignmentWatchReminderState(task);
+        }
+      } else if (watchScopeChanged) {
+        clearAssignmentWatchReminderState(task);
       }
       touchTask(task);
       state.tasks.sort(sortByDueTime);
@@ -3481,6 +3526,8 @@
       status: "pending",
       pinned: pinned,
       remindedAt: null,
+      assigneeRemind5At: null,
+      assigneeRemind10At: null,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
@@ -3598,9 +3645,12 @@
         task.status = "done";
         task.completedBy = completedBy;
         task.pinned = false;
+        task.remindedAt = null;
+        clearAssignmentWatchReminderState(task);
       } else {
         task.status = "pending";
         task.remindedAt = null;
+        clearAssignmentWatchReminderState(task);
         task.completedBy = "";
       }
       touchTask(task);
@@ -3802,6 +3852,7 @@
   function renderAll() {
     renderQueryText();
     renderTaskTable();
+    renderAssignmentWatchBoard();
     renderTodayTasks();
     renderUpcomingBoard();
   }
@@ -4142,6 +4193,135 @@
       .join("");
   }
 
+  function collectAssignmentWatchGroups(nowMs) {
+    const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+    const overdue10 = [];
+    const overdue5 = [];
+
+    state.tasks
+      .filter(function (task) {
+        return (
+          task.status === "pending" &&
+          Boolean(getTaskStartAt(task)) &&
+          !task.allDay &&
+          Boolean(normalizeAccountName(task.assignee)) &&
+          canViewTaskByAssignee(task)
+        );
+      })
+      .sort(sortByDueTime)
+      .forEach(function (task) {
+        const dueMs = new Date(getTaskStartAt(task)).getTime();
+        if (!Number.isFinite(dueMs)) {
+          return;
+        }
+        const overdueMs = now - dueMs;
+        if (overdueMs < ASSIGN_WATCH_5_MIN_MS) {
+          return;
+        }
+        if (overdueMs >= ASSIGN_WATCH_10_MIN_MS) {
+          overdue10.push(task);
+          return;
+        }
+        overdue5.push(task);
+      });
+
+    return {
+      overdue10: overdue10,
+      overdue5: overdue5,
+    };
+  }
+
+  function renderAssignmentWatchBoard() {
+    if (!els.assignmentWatchSummary || !els.assignmentWatchList || !els.assignmentWatchPanel) {
+      return;
+    }
+    if (!canAssignToOthers()) {
+      els.assignmentWatchPanel.classList.add("hidden");
+      return;
+    }
+    els.assignmentWatchPanel.classList.remove("hidden");
+
+    const now = Date.now();
+    const grouped = collectAssignmentWatchGroups(now);
+    const overdue10 = grouped.overdue10;
+    const overdue5 = grouped.overdue5;
+    const total = overdue10.length + overdue5.length;
+
+    if (total === 0) {
+      els.assignmentWatchSummary.textContent = getUiText("assignmentWatchSummaryEmpty");
+      els.assignmentWatchList.innerHTML =
+        '<li class="assignment-watch-empty">' + escapeHtml(getUiText("assignmentWatchListEmpty")) + "</li>";
+      return;
+    }
+
+    els.assignmentWatchSummary.textContent = getUiText("assignmentWatchSummary", {
+      count10: overdue10.length,
+      count5: overdue5.length,
+    });
+
+    const items = [];
+    overdue10.forEach(function (task) {
+      items.push(renderAssignmentWatchItem(task, 10, now));
+    });
+    overdue5.forEach(function (task) {
+      items.push(renderAssignmentWatchItem(task, 5, now));
+    });
+    els.assignmentWatchList.innerHTML = items.join("");
+  }
+
+  function renderAssignmentWatchItem(task, level, nowMs) {
+    const title = getTaskDisplayField(task, "title") || task.title || "-";
+    const categoryText = getCategoryDisplayName(task.category || getUiText("uncategorized"));
+    const displaySubcategory = getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory);
+    const ownerText = task.owner || getUiText("notFilled");
+    const assigneeText = task.assignee || getUiText("taskAssigneeUnassigned");
+    const dueMs = new Date(getTaskStartAt(task)).getTime();
+    const overdueSec = Number.isFinite(dueMs) ? Math.max(0, Math.floor((nowMs - dueMs) / 1000)) : 0;
+    const tagText = level >= 10 ? getUiText("assignmentWatchTag10") : getUiText("assignmentWatchTag5");
+    const levelClass = level >= 10 ? "level-10" : "level-5";
+    const metaLine =
+      escapeHtml(categoryText) +
+      (displaySubcategory ? " / " + escapeHtml(displaySubcategory) : "") +
+      " | " +
+      getUiText("owner") +
+      "：" +
+      escapeHtml(ownerText) +
+      " | " +
+      getUiText("assignee") +
+      "：" +
+      escapeHtml(assigneeText);
+
+    return (
+      '<li class="assignment-watch-item ' +
+      levelClass +
+      '">' +
+      '<div class="assignment-watch-item-top">' +
+      '<span class="assignment-watch-tag ' +
+      levelClass +
+      '">' +
+      escapeHtml(tagText) +
+      "</span>" +
+      '<span class="assignment-watch-overdue">' +
+      escapeHtml(getUiText("assignmentWatchOverdueLabel")) +
+      "：" +
+      escapeHtml(formatDuration(overdueSec)) +
+      "</span>" +
+      "</div>" +
+      '<p class="assignment-watch-title">' +
+      escapeHtml(title) +
+      "</p>" +
+      '<p class="assignment-watch-meta">' +
+      metaLine +
+      "</p>" +
+      '<p class="assignment-watch-meta">' +
+      escapeHtml(getUiText("time")) +
+      "：" +
+      escapeHtml(formatDueDisplay(task)) +
+      "</p>" +
+      "</li>"
+    );
+  }
+
   function renderUpcomingBoard() {
     if (!els.upcomingSummary || !els.upcomingTaskList) {
       return;
@@ -4301,12 +4481,96 @@
       }
       renderTodayTasks();
       renderUpcomingBoard();
+      renderAssignmentWatchBoard();
     }, COUNTDOWN_REFRESH_MS);
+  }
+
+  function checkAssignmentWatchReminders(nowMs) {
+    if (!canAssignToOthers()) {
+      return false;
+    }
+    const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+    let changed = false;
+    state.tasks
+      .filter(function (task) {
+        return (
+          task.status === "pending" &&
+          Boolean(getTaskStartAt(task)) &&
+          !task.allDay &&
+          Boolean(normalizeAccountName(task.assignee)) &&
+          canViewTaskByAssignee(task)
+        );
+      })
+      .sort(sortByDueTime)
+      .forEach(function (task) {
+        const dueMs = new Date(getTaskStartAt(task)).getTime();
+        if (!Number.isFinite(dueMs)) {
+          return;
+        }
+        const overdueMs = now - dueMs;
+        if (overdueMs < ASSIGN_WATCH_5_MIN_MS) {
+          return;
+        }
+        if (overdueMs >= ASSIGN_WATCH_10_MIN_MS) {
+          if (!task.assigneeRemind10At) {
+            sendAssignmentWatchReminder(task, 10);
+            task.assigneeRemind10At = new Date(now).toISOString();
+            changed = true;
+          }
+          if (!task.assigneeRemind5At) {
+            task.assigneeRemind5At = task.assigneeRemind10At;
+            changed = true;
+          }
+          return;
+        }
+        if (!task.assigneeRemind5At) {
+          sendAssignmentWatchReminder(task, 5);
+          task.assigneeRemind5At = new Date(now).toISOString();
+          changed = true;
+        }
+      });
+    return changed;
+  }
+
+  function sendAssignmentWatchReminder(task, minutes) {
+    const title = getTaskDisplayField(task, "title") || task.title || "-";
+    const assignee = task.assignee || getUiText("taskAssigneeUnassigned");
+    const bodyText = getUiText("assignmentWatchReminderText", {
+      title: title,
+      minutes: String(minutes),
+      assignee: assignee,
+    });
+    showToast(bodyText);
+
+    if (!els.notificationToggle || !els.notificationToggle.checked) {
+      return;
+    }
+    if (!("Notification" in window)) {
+      return;
+    }
+    if (Notification.permission !== "granted") {
+      return;
+    }
+
+    const notification = new Notification(getUiText("assignmentWatchReminderTitle"), {
+      body: bodyText,
+    });
+    setTimeout(function () {
+      try {
+        notification.close();
+      } catch (error) {
+        // ignore close failure
+      }
+    }, 12000);
   }
 
   function checkReminders() {
     renderTodayTasks();
     renderUpcomingBoard();
+    renderAssignmentWatchBoard();
+
+    const now = Date.now();
+    let hasReminderStateChanged = checkAssignmentWatchReminders(now);
 
     const pending = state.tasks
       .filter(function (task) {
@@ -4315,22 +4579,31 @@
       .sort(sortByDueTime);
 
     if (pending.length === 0) {
+      if (hasReminderStateChanged) {
+        saveTasks();
+      }
       return;
     }
 
-    const now = Date.now();
     const dueTask = pending.find(function (task) {
       const dueMs = new Date(getTaskStartAt(task)).getTime();
       return !task.remindedAt && dueMs <= now && dueMs >= now - OVERDUE_NOTICE_KEEP_MS;
     });
 
     if (!dueTask) {
+      if (hasReminderStateChanged) {
+        saveTasks();
+      }
       return;
     }
 
     sendReminder(dueTask);
     dueTask.remindedAt = new Date().toISOString();
-    saveTasks();
+    hasReminderStateChanged = true;
+
+    if (hasReminderStateChanged) {
+      saveTasks();
+    }
   }
 
   function sendReminder(task) {
@@ -5771,6 +6044,14 @@
       return;
     }
     task.updatedAt = new Date().toISOString();
+  }
+
+  function clearAssignmentWatchReminderState(task) {
+    if (!task || typeof task !== "object") {
+      return;
+    }
+    task.assigneeRemind5At = null;
+    task.assigneeRemind10At = null;
   }
 
   function getTaskRevisionMs(task) {
