@@ -136,6 +136,9 @@
         width: 100%;
         border-collapse: collapse;
       }
+      .responsive-table-wrap {
+        overflow: auto;
+      }
       th,
       td {
         border-bottom: 1px solid #e9e2d5;
@@ -178,6 +181,175 @@
         th,
         td {
           font-size: 13px;
+        }
+      }
+      @media (max-width: 760px) {
+        body {
+          background: #fbf9f4;
+        }
+        .wrap {
+          width: 100%;
+          margin: 0;
+          padding: 10px;
+          gap: 10px;
+        }
+        .card {
+          border-radius: 8px;
+          padding: 14px;
+          box-shadow: 0 4px 14px rgba(35, 28, 16, 0.05);
+        }
+        h1 {
+          font-size: 1.8rem;
+          line-height: 1.2;
+        }
+        h2 {
+          font-size: 1.24rem;
+          line-height: 1.25;
+        }
+        .grid {
+          gap: 12px;
+        }
+        .grid.two,
+        .grid.audit-filters {
+          grid-template-columns: 1fr;
+        }
+        .row {
+          align-items: stretch;
+          gap: 8px;
+        }
+        .toolbar {
+          align-items: flex-start;
+        }
+        .toolbar > .row {
+          width: 100%;
+        }
+        .badge {
+          max-width: 100%;
+          min-height: 34px;
+          justify-content: center;
+          overflow-wrap: anywhere;
+        }
+        input,
+        select,
+        textarea {
+          min-height: 44px;
+          border-radius: 6px;
+          font-size: 16px;
+        }
+        .btn {
+          min-height: 42px;
+          border-radius: 999px;
+          padding: 8px 14px;
+        }
+        #login-btn,
+        #create-btn {
+          width: 100%;
+        }
+        .responsive-table-wrap {
+          overflow: visible;
+        }
+        .responsive-table-wrap table,
+        .responsive-table-wrap thead,
+        .responsive-table-wrap tbody,
+        .responsive-table-wrap tr,
+        .responsive-table-wrap th,
+        .responsive-table-wrap td {
+          display: block;
+          width: 100%;
+        }
+        .responsive-table-wrap thead {
+          display: none;
+        }
+        .responsive-table-wrap tbody {
+          display: grid;
+          gap: 10px;
+        }
+        .responsive-table-wrap tr {
+          border: 1px solid #e1d6c5;
+          border-radius: 8px;
+          background: #fffdf9;
+          padding: 10px;
+        }
+        .responsive-table-wrap td {
+          border: 0;
+          padding: 8px 0;
+          display: grid;
+          grid-template-columns: 88px minmax(0, 1fr);
+          gap: 10px;
+          align-items: center;
+          min-width: 0;
+        }
+        .responsive-table-wrap td::before {
+          color: #786b55;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+        }
+        #accounts-body td:nth-child(1)::before {
+          content: "帳號";
+        }
+        #accounts-body td:nth-child(2)::before {
+          content: "角色";
+        }
+        #accounts-body td:nth-child(3)::before {
+          content: "啟用";
+        }
+        #accounts-body td:nth-child(4)::before {
+          content: "重設密碼";
+        }
+        #accounts-body td:nth-child(5)::before {
+          content: "更新";
+        }
+        #accounts-body td:nth-child(6)::before {
+          content: "刪除";
+        }
+        #audit-body td:nth-child(1)::before {
+          content: "ID";
+        }
+        #audit-body td:nth-child(2)::before {
+          content: "時間";
+        }
+        #audit-body td:nth-child(3)::before {
+          content: "人員";
+        }
+        #audit-body td:nth-child(4)::before {
+          content: "角色";
+        }
+        #audit-body td:nth-child(5)::before {
+          content: "動作";
+        }
+        #audit-body td:nth-child(6)::before {
+          content: "目標";
+        }
+        #audit-body td:nth-child(7)::before {
+          content: "摘要";
+        }
+        #audit-body td:nth-child(8)::before {
+          content: "內容細項";
+        }
+        .responsive-table-wrap td[colspan] {
+          display: block;
+          text-align: center !important;
+        }
+        .responsive-table-wrap td[colspan]::before {
+          content: none;
+        }
+        .responsive-table-wrap .btn {
+          width: 100%;
+        }
+        .responsive-table-wrap input[type="checkbox"] {
+          width: 24px;
+          height: 24px;
+          min-height: 0;
+        }
+        .mono,
+        .cell-details {
+          max-width: none;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .cell-details {
+          line-height: 1.55;
         }
       }
     </style>
@@ -243,7 +415,7 @@
           <h2>帳號列表</h2>
           <button id="refresh-accounts-btn" class="btn" type="button">重新整理</button>
         </div>
-        <div style="overflow: auto">
+        <div class="responsive-table-wrap">
           <table>
             <thead>
               <tr>
@@ -308,7 +480,7 @@
             <button id="audit-clear-filter-btn" class="btn" type="button">清除篩選</button>
           </div>
         </div>
-        <div style="overflow: auto">
+        <div class="responsive-table-wrap">
           <table>
             <thead>
               <tr>
