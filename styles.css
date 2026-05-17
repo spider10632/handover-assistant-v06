@@ -1371,6 +1371,17 @@ td {
   gap: 8px;
 }
 
+.team-status-card-toggle {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 .team-status-dot {
   width: 9px;
   height: 9px;
@@ -1398,6 +1409,13 @@ td {
   text-transform: uppercase;
 }
 
+.team-status-expand-indicator {
+  color: #d8c89f;
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .team-status-meta {
   display: grid;
   gap: 2px;
@@ -1405,6 +1423,77 @@ td {
   color: #c7c0b2;
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.team-status-task-wrap {
+  margin-top: 8px;
+  border-top: 1px dashed rgba(209, 197, 180, 0.26);
+  padding-top: 8px;
+}
+
+.team-status-task-title {
+  margin: 0 0 6px;
+  color: #e7d9ba;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.team-status-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.team-status-task-item {
+  border: 1px solid rgba(209, 197, 180, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px 7px;
+}
+
+.team-status-task-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-status-task-status {
+  color: #f6deb2;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.team-status-task-time {
+  color: #cbc0aa;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.team-status-task-name {
+  margin: 4px 0 0;
+  color: #fff3d9;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.team-status-task-meta {
+  margin: 3px 0 0;
+  color: #cbc0aa;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.team-status-task-empty {
+  border: 1px dashed rgba(209, 197, 180, 0.26);
+  border-radius: 8px;
+  padding: 6px 7px;
+  color: #c6bea9;
+  font-size: 0.72rem;
 }
 
 .team-status-online {

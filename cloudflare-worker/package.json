@@ -6,7 +6,9 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:create": "wrangler d1 create handover-db",
-    "db:migrate": "wrangler d1 execute handover-db --file=schema.sql"
+    "db:migrate": "wrangler d1 execute handover-db --file=schema.sql",
+    "test:translation-guard": "node ../scripts/translation-guard-test.mjs --server test",
+    "qa:cleanup": "node ../scripts/qa-cleanup.mjs --server test --prefix QA_TEST_"
   },
   "devDependencies": {
     "wrangler": "^4.10.0"

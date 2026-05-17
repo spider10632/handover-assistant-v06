@@ -7,6 +7,14 @@ const MAX_TRANSLATE_TEXT_LENGTH = 2000;
 const TRANSLATE_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const TRANSLATE_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
 const TRANSLATE_PROVIDER_DEFAULT_ORDER = ["azure", "deepl", "google-cloud", "google-public", "gemini"];
+const TRANSLATE_GUARD_SERVER_IDS = new Set(["test"]);
+const TRANSLATE_GUARD_RETRY_PROVIDER_ORDER = ["gemini", "azure", "deepl", "google-cloud", "google-public"];
+const HOSPITALITY_GLOSSARY = Object.freeze([
+  Object.freeze({ zh: ["櫃檯"], en: "front desk" }),
+  Object.freeze({ zh: ["房客", "客人"], en: "guest" }),
+  Object.freeze({ zh: ["取行李", "下行李", "房內取行李"], en: "luggage pickup" }),
+  Object.freeze({ zh: ["交接"], en: "handover" }),
+]);
 const SESSION_TTL_DAYS = 30;
 const AUDIT_DEFAULT_LIMIT = 200;
 const AUDIT_MAX_LIMIT = 500;
@@ -1754,34 +1762,33 @@ async function handleTranslate(request, env, serverId, cors) {
     );
   }
 
-  const order = buildTranslateProviderOrder(env);
-  const failures = [];
   let translated = null;
   let provider = "";
+  let quality = null;
+  let failures = [];
+  const guardEnabled = shouldUseTranslateQualityGuard(serverId);
 
-  for (const providerName of order) {
-    if (!isTranslateProviderReady(providerName, env)) {
-      failures.push(providerName + ":NOT_CONFIGURED");
-      continue;
+  try {
+    if (guardEnabled) {
+      const guarded = await translateTextsWithQualityGuard(env, targetLang, normalizedTexts);
+      translated = guarded.translations;
+      provider = guarded.provider;
+      quality = guarded.quality;
+      failures = guarded.failures;
+    } else {
+      const result = await translateTextsWithProviderFallback(env, targetLang, normalizedTexts, {});
+      translated = result.translations;
+      provider = result.provider;
+      failures = result.failures;
     }
-    try {
-      translated = await translateTextsByProvider(providerName, env, targetLang, normalizedTexts);
-      provider = providerName;
-      break;
-    } catch (error) {
-      const status = Number(error && error.status ? error.status : 0);
-      const message = String(error && error.message ? error.message : "translate failed");
-      failures.push(providerName + ":" + (status || "ERR") + ":" + message.slice(0, 220));
-    }
-  }
-
-  if (!translated || !provider) {
+  } catch (error) {
+    const details = Array.isArray(error && error.failures) ? error.failures : failures;
     return jsonResponse(
       {
         ok: false,
         error: "TRANSLATION_FAILED",
         message: "all providers failed",
-        details: failures,
+        details,
       },
       502,
       cors,
@@ -1795,10 +1802,16 @@ async function handleTranslate(request, env, serverId, cors) {
       targetLang,
       provider,
       translations: translated,
+      ...(Array.isArray(quality) ? { quality } : {}),
+      ...(failures.length > 0 ? { details: failures } : {}),
     },
     200,
     cors,
   );
+}
+
+function shouldUseTranslateQualityGuard(serverId) {
+  return TRANSLATE_GUARD_SERVER_IDS.has(normalizeServerId(serverId));
 }
 
 function buildTranslateProviderOrder(env) {
@@ -1832,23 +1845,139 @@ function isTranslateProviderReady(provider, env) {
   return false;
 }
 
-async function translateTextsByProvider(provider, env, targetLang, texts) {
+async function translateTextsByProvider(provider, env, targetLang, texts, options) {
   if (provider === "azure") {
-    return translateTextsWithAzure(env, targetLang, texts);
+    return translateTextsWithAzure(env, targetLang, texts, options);
   }
   if (provider === "deepl") {
-    return translateTextsWithDeepL(env, targetLang, texts);
+    return translateTextsWithDeepL(env, targetLang, texts, options);
   }
   if (provider === "google-cloud") {
-    return translateTextsWithGoogleCloud(env, targetLang, texts);
+    return translateTextsWithGoogleCloud(env, targetLang, texts, options);
   }
   if (provider === "gemini") {
-    return translateTextsWithGemini(env, targetLang, texts);
+    return translateTextsWithGemini(env, targetLang, texts, options);
   }
   if (provider === "google-public") {
-    return translateTextsWithGooglePublic(targetLang, texts);
+    return translateTextsWithGooglePublic(targetLang, texts, options);
   }
   throw new Error("unknown provider: " + provider);
+}
+
+async function translateTextsWithProviderFallback(env, targetLang, texts, options) {
+  const opts = options && typeof options === "object" ? options : {};
+  const preferredOrder = Array.isArray(opts.preferredOrder)
+    ? opts.preferredOrder.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+    : [];
+  const order = preferredOrder.length > 0 ? preferredOrder : buildTranslateProviderOrder(env);
+  const failures = [];
+
+  for (const providerName of order) {
+    if (!isTranslateProviderReady(providerName, env)) {
+      failures.push(providerName + ":NOT_CONFIGURED");
+      continue;
+    }
+    try {
+      const translations = await translateTextsByProvider(providerName, env, targetLang, texts, opts);
+      return {
+        provider: providerName,
+        translations,
+        failures,
+      };
+    } catch (error) {
+      const status = Number(error && error.status ? error.status : 0);
+      const message = String(error && error.message ? error.message : "translate failed");
+      failures.push(providerName + ":" + (status || "ERR") + ":" + message.slice(0, 220));
+    }
+  }
+
+  const failed = new Error("translation providers exhausted");
+  failed.failures = failures;
+  throw failed;
+}
+
+async function translateTextsWithQualityGuard(env, targetLang, sourceTexts) {
+  const firstRun = await translateTextsWithProviderFallback(env, targetLang, sourceTexts, {
+    strictPrompt: false,
+  });
+  const qualityRows = sourceTexts.map((sourceText, index) => {
+    const normalizedText = applyHospitalityGlossaryOutput(sourceText, firstRun.translations[index], targetLang);
+    const evaluated = evaluateTranslationQuality(sourceText, normalizedText, targetLang);
+    return {
+      index,
+      text: normalizedText || String(sourceText || ""),
+      ok: evaluated.ok,
+      reason: evaluated.reason,
+      retried: false,
+      provider: firstRun.provider,
+    };
+  });
+
+  const failedIndexes = qualityRows
+    .filter((row) => !row.ok)
+    .map((row) => row.index);
+
+  if (failedIndexes.length > 0) {
+    const retryTexts = failedIndexes.map((index) => String(sourceTexts[index] || ""));
+    try {
+      const retryRun = await translateTextsWithProviderFallback(env, targetLang, retryTexts, {
+        strictPrompt: true,
+        preferredOrder: TRANSLATE_GUARD_RETRY_PROVIDER_ORDER,
+      });
+      failedIndexes.forEach((sourceIndex, retryIndex) => {
+        const retriedText = applyHospitalityGlossaryOutput(
+          sourceTexts[sourceIndex],
+          retryRun.translations[retryIndex],
+          targetLang,
+        );
+        const evaluated = evaluateTranslationQuality(sourceTexts[sourceIndex], retriedText, targetLang);
+        if (evaluated.ok) {
+          qualityRows[sourceIndex] = {
+            index: sourceIndex,
+            text: retriedText || String(sourceTexts[sourceIndex] || ""),
+            ok: true,
+            reason: "",
+            retried: true,
+            provider: retryRun.provider,
+          };
+        } else {
+          qualityRows[sourceIndex] = {
+            index: sourceIndex,
+            text: String(sourceTexts[sourceIndex] || ""),
+            ok: false,
+            reason: evaluated.reason || "QUALITY_GUARD_FAILED",
+            retried: true,
+            provider: retryRun.provider || qualityRows[sourceIndex].provider,
+          };
+        }
+      });
+    } catch (error) {
+      for (const sourceIndex of failedIndexes) {
+        qualityRows[sourceIndex] = {
+          index: sourceIndex,
+          text: String(sourceTexts[sourceIndex] || ""),
+          ok: false,
+          reason: "QUALITY_GUARD_RETRY_PROVIDER_FAILED",
+          retried: true,
+          provider: qualityRows[sourceIndex].provider,
+        };
+      }
+    }
+  }
+
+  return {
+    provider: firstRun.provider,
+    failures: firstRun.failures,
+    translations: qualityRows.map((row) => {
+      return row.ok ? row.text : String(sourceTexts[row.index] || "");
+    }),
+    quality: qualityRows.map((row) => ({
+      ok: Boolean(row.ok),
+      reason: row.ok ? "" : String(row.reason || "QUALITY_GUARD_FAILED"),
+      retried: Boolean(row.retried),
+      provider: String(row.provider || ""),
+    })),
+  };
 }
 
 function parseAllowedUsers(raw) {
@@ -1883,11 +2012,13 @@ function normalizeTargetLang(value) {
   return "";
 }
 
-async function translateTextsWithGemini(env, targetLang, texts) {
+async function translateTextsWithGemini(env, targetLang, texts, options) {
   const apiKey = String(env.GEMINI_API_KEY || "").trim();
   if (!apiKey) {
     throw new Error("missing api key");
   }
+  const opts = options && typeof options === "object" ? options : {};
+  const strictPrompt = Boolean(opts.strictPrompt);
   const targetLabel = targetLang === "en" ? "English" : "Traditional Chinese (Taiwan)";
   const models = buildTranslateModelList(env);
 
@@ -1895,8 +2026,7 @@ async function translateTextsWithGemini(env, targetLang, texts) {
     systemInstruction: {
       parts: [
         {
-          text:
-            "You are a professional concierge handover translator. Translate fully and faithfully. Never summarize, shorten, omit, reorder, or rewrite facts. Keep all names, room numbers, dates, times, amounts, symbols, separators, and line breaks. Return JSON only.",
+          text: buildHospitalitySystemPrompt(targetLang, strictPrompt),
         },
       ],
     },
@@ -1917,7 +2047,10 @@ async function translateTextsWithGemini(env, targetLang, texts) {
                 "Do not summarize or shorten.",
                 "Preserve all factual details and order.",
                 "If unsure about a token, keep it as-is.",
+                "Preserve the original subject and responsibility target exactly.",
+                "If source mentions guest/客人/房客, keep subject as guest/客人/房客, not you/your/你/您.",
               ],
+              glossary: buildHospitalityGlossaryPrompt(targetLang),
               texts: texts,
             }),
           },
@@ -2217,6 +2350,169 @@ async function translateTextsWithGooglePublic(targetLang, texts) {
     results.push(translated || text);
   }
   return results;
+}
+
+function buildHospitalityGlossaryPrompt(targetLang) {
+  const target = normalizeTargetLang(targetLang) || "en";
+  return HOSPITALITY_GLOSSARY.map((entry) => {
+    const zh = entry.zh.join("/");
+    const en = entry.en;
+    return target === "en" ? zh + " => " + en : en + " => " + zh;
+  });
+}
+
+function buildHospitalitySystemPrompt(targetLang, strictPrompt) {
+  const glossaryLines = buildHospitalityGlossaryPrompt(targetLang)
+    .map((line) => "- " + line)
+    .join("\n");
+  const strictLine = strictPrompt
+    ? "Strict retry mode: absolutely preserve subject and accountability. Never convert guest/客人/房客 into you/your/你/您."
+    : "Preserve subject and accountability. Do not alter who should perform actions.";
+  return (
+    "You are a hotel concierge handover translation assistant.\n" +
+    "Translate faithfully with concise operational wording.\n" +
+    strictLine +
+    "\nKeep names, room numbers, dates, times, amounts, symbols, separators, and line breaks.\n" +
+    "Do not summarize or paraphrase beyond translation.\n" +
+    "Terminology consistency:\n" +
+    glossaryLines +
+    "\nReturn JSON only."
+  );
+}
+
+function applyHospitalityGlossaryOutput(sourceText, translatedText, targetLang) {
+  const source = String(sourceText || "");
+  let translated = String(translatedText || "").trim();
+  if (!translated) {
+    return translated;
+  }
+
+  if (targetLang === "en") {
+    if (/櫃檯/.test(source)) {
+      translated = translated.replace(/\b(reception(?:\s*desk)?|front\s*counter)\b/gi, "front desk");
+    }
+    if (/房客|客人/.test(source)) {
+      translated = translated.replace(/\b(occupant|customer|passenger)\b/gi, "guest");
+    }
+    if (/取行李|下行李|房內取行李/.test(source)) {
+      translated = translated
+        .replace(/\b(baggage pickup|pick up luggage|pickup luggage)\b/gi, "luggage pickup")
+        .replace(/\bunload(?:ing)?(?:\s+their)?\s+luggage\b/gi, "luggage pickup");
+    }
+    if (/交接/.test(source)) {
+      translated = translated.replace(/\b(shift handoff|handoff)\b/gi, "handover");
+    }
+  } else if (targetLang === "zh") {
+    if (/\bfront\s*desk\b/i.test(source)) {
+      translated = translated.replace(/前台|前檯|接待處/g, "櫃檯");
+    }
+    if (/\bguest(s)?\b/i.test(source)) {
+      translated = translated.replace(/住客|旅客|賓客/g, "客人");
+    }
+    if (/\bluggage pickup\b/i.test(source)) {
+      translated = translated.replace(/提領行李|拿行李/g, "取行李");
+    }
+    if (/\bhandover\b/i.test(source)) {
+      translated = translated.replace(/交班/g, "交接");
+    }
+  }
+  return translated.trim();
+}
+
+function evaluateTranslationQuality(sourceText, translatedText, targetLang) {
+  const source = String(sourceText || "").trim();
+  const translated = String(translatedText || "").trim();
+  if (!translated || !/[A-Za-z0-9\u3400-\u9fff]/.test(translated)) {
+    return { ok: false, reason: "EMPTY_OR_PUNCT_ONLY" };
+  }
+
+  const requiresTranslation = shouldRequireTranslationQualityCheck(source, targetLang);
+  if (requiresTranslation && normalizeQualityComparable(translated) === normalizeQualityComparable(source)) {
+    return { ok: false, reason: "UNCHANGED_TEXT" };
+  }
+
+  if (hasGuestSubjectIndicator(source)) {
+    if (targetLang === "en" && hasEnglishYouSubjectPattern(translated)) {
+      return { ok: false, reason: "SUBJECT_MISPLACED_YOU" };
+    }
+    if (targetLang === "zh" && /(?:如果)?[你妳您]|你們|妳們|您們/.test(translated)) {
+      return { ok: false, reason: "SUBJECT_MISPLACED_YOU" };
+    }
+  }
+
+  const residue = evaluateUnexpectedLanguageResidue(translated, targetLang, requiresTranslation);
+  if (residue) {
+    return { ok: false, reason: residue };
+  }
+
+  return { ok: true, reason: "" };
+}
+
+function shouldRequireTranslationQualityCheck(source, targetLang) {
+  const text = String(source || "").trim();
+  if (!text) {
+    return false;
+  }
+  if (targetLang === "en") {
+    return hasCjkText(text);
+  }
+  if (targetLang === "zh") {
+    return hasLatinText(text);
+  }
+  return false;
+}
+
+function hasGuestSubjectIndicator(text) {
+  return /客人|房客|\bguest(s)?\b/i.test(String(text || ""));
+}
+
+function hasEnglishYouSubjectPattern(text) {
+  const value = String(text || "");
+  return /\bif\s+you\b/i.test(value) || /^\s*you\b/i.test(value) || /,\s*you\b/i.test(value);
+}
+
+function normalizeQualityComparable(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, "");
+}
+
+function evaluateUnexpectedLanguageResidue(text, targetLang, requiresTranslation) {
+  const value = String(text || "");
+  const cjkCount = (value.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g) || []).length;
+  const latinCount = (value.match(/[A-Za-z]/g) || []).length;
+  const total = cjkCount + latinCount;
+  if (!requiresTranslation || total <= 0) {
+    return "";
+  }
+  if (targetLang === "en") {
+    if (latinCount === 0) {
+      return "TARGET_LANG_RESIDUE_HIGH";
+    }
+    const ratio = cjkCount / total;
+    if (ratio > 0.45) {
+      return "TARGET_LANG_RESIDUE_HIGH";
+    }
+    return "";
+  }
+  if (targetLang === "zh") {
+    if (cjkCount === 0) {
+      return "TARGET_LANG_RESIDUE_HIGH";
+    }
+    const ratio = latinCount / total;
+    if (ratio > 0.68) {
+      return "TARGET_LANG_RESIDUE_HIGH";
+    }
+  }
+  return "";
+}
+
+function hasCjkText(text) {
+  return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(String(text || ""));
+}
+
+function hasLatinText(text) {
+  return /[A-Za-z]/.test(String(text || ""));
 }
 
 function normalizeUiTargetLang(targetLang) {

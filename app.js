@@ -153,6 +153,8 @@
       teamLoadError: "Team 狀態讀取失敗。",
       teamActiveTaskCount: "目前事項",
       teamLastActiveAt: "最後活動",
+      teamTaskListLabel: "目前事項明細",
+      teamTaskListEmpty: "目前沒有被指派的處理中事項。",
       teamStatusOnline: "在線",
       teamStatusIdle: "閒置",
       teamStatusOffline: "離線",
@@ -201,6 +203,7 @@
       actionTranslating: "翻譯中...",
       actionShowOriginal: "顯示原文",
       actionShowTranslated: "顯示翻譯",
+      translationQualityFallback: "翻譯品質不足，已顯示原文。",
       permissionDenied: "此帳號權限不足，無法執行此操作。",
       noTranslatedContent: "此內容目前無翻譯可切換。",
       owner: "填寫人",
@@ -283,6 +286,8 @@
       teamLoadError: "Failed to load team status.",
       teamActiveTaskCount: "Active Tasks",
       teamLastActiveAt: "Last Active",
+      teamTaskListLabel: "Assigned Items",
+      teamTaskListEmpty: "No active assigned items.",
       teamStatusOnline: "online",
       teamStatusIdle: "idle",
       teamStatusOffline: "offline",
@@ -331,6 +336,7 @@
       actionTranslating: "Translating...",
       actionShowOriginal: "Show Original",
       actionShowTranslated: "Show Translation",
+      translationQualityFallback: "Translation quality is insufficient. Showing original.",
       permissionDenied: "Your account does not have permission for this action.",
       noTranslatedContent: "No translated content available for this field.",
       owner: "Owner",
@@ -463,6 +469,7 @@
     mobileUpcomingOpen: false,
     teamPanelOpen: false,
     teamStatusItems: [],
+    teamStatusExpandedUsers: {},
     teamStatusLoading: false,
     teamStatusLastError: "",
     teamStatusTimer: null,
@@ -1180,6 +1187,7 @@
     }
     if (!canViewTeamStatusPanel()) {
       state.teamPanelOpen = false;
+      state.teamStatusExpandedUsers = {};
       if (els.teamStatusToggle) {
         els.teamStatusToggle.classList.add("hidden");
         els.teamStatusToggle.setAttribute("aria-expanded", "false");
@@ -2026,6 +2034,25 @@
     }
   }
 
+  function normalizeTaskTranslationMeta(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return {
+        qualityOk: null,
+        reason: "",
+        provider: "",
+        updatedAt: "",
+      };
+    }
+    const qualityOk =
+      raw.qualityOk === true ? true : raw.qualityOk === false ? false : null;
+    return {
+      qualityOk: qualityOk,
+      reason: String(raw.reason || "").trim(),
+      provider: String(raw.provider || "").trim(),
+      updatedAt: String(raw.updatedAt || "").trim(),
+    };
+  }
+
   function normalizeTaskTranslations(raw) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       return {};
@@ -2041,6 +2068,7 @@
         description: String(item.description || "").trim(),
         subcategory: String(item.subcategory || "").trim(),
         _sig: String(item._sig || "").trim(),
+        meta: normalizeTaskTranslationMeta(item.meta),
       };
     });
     return result;
@@ -2107,6 +2135,28 @@
     return translated || original;
   }
 
+  function getTaskTranslationEntry(task, targetLang) {
+    if (!task || typeof task !== "object") {
+      return null;
+    }
+    const target = normalizeUiLanguage(targetLang);
+    const translations =
+      task.translations && typeof task.translations === "object" && !Array.isArray(task.translations)
+        ? task.translations
+        : null;
+    if (!translations) {
+      return null;
+    }
+    const entry = translations[target];
+    if (!entry || typeof entry !== "object") {
+      return null;
+    }
+    if (String(entry._sig || "") !== getTaskTranslationSignature(task)) {
+      return null;
+    }
+    return entry;
+  }
+
   function isTaskTranslationUsable(task, translationEntry, targetLang) {
     if (!task || typeof task !== "object") {
       return false;
@@ -2121,6 +2171,10 @@
     }
     const translated = String(translationEntry.description || "").trim();
     if (!translated) {
+      return false;
+    }
+    const meta = normalizeTaskTranslationMeta(translationEntry.meta);
+    if (meta.qualityOk === false) {
       return false;
     }
     // If translated note is exactly same as source when translation is required,
@@ -2238,13 +2292,34 @@
     if (!parsed || !Array.isArray(parsed.translations)) {
       throw new Error("translate invalid response");
     }
-    const result = parsed.translations.map(function (item) {
+    const translations = parsed.translations.map(function (item) {
       return String(item == null ? "" : item).trim();
     });
-    if (result.length !== sourceList.length) {
+    if (translations.length !== sourceList.length) {
       throw new Error("translate response length mismatch");
     }
-    return result;
+    const qualityList = Array.isArray(parsed.quality) ? parsed.quality : [];
+    return translations.map(function (text, index) {
+      const rawQuality = qualityList[index];
+      const normalizedQuality =
+        rawQuality && typeof rawQuality === "object"
+          ? {
+              ok: rawQuality.ok !== false,
+              reason: String(rawQuality.reason || "").trim(),
+              retried: Boolean(rawQuality.retried),
+              provider: String(rawQuality.provider || parsed.provider || "").trim(),
+            }
+          : {
+              ok: true,
+              reason: "",
+              retried: false,
+              provider: String(parsed.provider || "").trim(),
+            };
+      return {
+        text: text,
+        quality: normalizedQuality,
+      };
+    });
   }
 
   function isRetryableTranslateStatus(status) {
@@ -2268,17 +2343,20 @@
     }
   }
 
-  function setTaskTranslationEntry(task, targetLang, descriptionValue) {
+  function setTaskTranslationEntry(task, targetLang, descriptionValue, meta) {
     if (!task || typeof task !== "object") {
       return;
     }
     const target = normalizeUiLanguage(targetLang);
+    const normalizedMeta = normalizeTaskTranslationMeta(meta);
+    normalizedMeta.updatedAt = new Date().toISOString();
     ensureTaskTranslationContainer(task);
     task.translations[target] = {
       title: String(task.title || "").trim(),
       description: String(descriptionValue == null ? task.description : descriptionValue).trim(),
       subcategory: String(task.subcategory || "").trim(),
       _sig: getTaskTranslationSignature(task),
+      meta: normalizedMeta,
     };
   }
 
@@ -2338,40 +2416,80 @@
     delete state.translatingTaskIds[id];
   }
 
+  function isTranslationQualityFailureResult(result) {
+    return Boolean(result && result.qualityOk === false);
+  }
+
   async function translateTaskDescriptionForLanguage(task, targetLang, options) {
     if (!task || typeof task !== "object") {
-      return false;
+      return { changed: false, qualityOk: true, reason: "", provider: "" };
     }
     const opts = options && typeof options === "object" ? options : {};
     const target = normalizeUiLanguage(targetLang);
     const source = String(task.description || "").trim();
 
     if (!source) {
-      setTaskTranslationEntry(task, target, "");
-      return true;
+      setTaskTranslationEntry(task, target, "", {
+        qualityOk: true,
+        reason: "",
+        provider: "",
+      });
+      return { changed: true, qualityOk: true, reason: "", provider: "" };
     }
 
     if (!shouldTranslateTextForTarget(source, target)) {
-      setTaskTranslationEntry(task, target, source);
-      return true;
+      setTaskTranslationEntry(task, target, source, {
+        qualityOk: true,
+        reason: "",
+        provider: "",
+      });
+      return { changed: true, qualityOk: true, reason: "", provider: "" };
     }
 
     if (!opts.force && hasTaskTranslationCacheForLanguage(task, target)) {
-      return false;
+      return { changed: false, qualityOk: true, reason: "", provider: "" };
     }
 
     const translatedList = await requestCloudTranslations(target, [source]);
-    const translated = String((translatedList && translatedList[0]) || "").trim();
+    const first = translatedList && translatedList[0] ? translatedList[0] : null;
+    const translated = String(first && first.text ? first.text : "").trim();
+    const quality = first && first.quality ? first.quality : { ok: true, reason: "", provider: "" };
     if (!translated || translated === source) {
       throw new Error("TRANSLATION_EMPTY_OR_UNCHANGED");
     }
-    setTaskTranslationEntry(task, target, translated);
-    return true;
+    if (quality.ok === false) {
+      const currentEntry = getTaskTranslationEntry(task, target);
+      const hasUsableCurrent = Boolean(currentEntry && isTaskTranslationUsable(task, currentEntry, target));
+      if (!hasUsableCurrent) {
+        setTaskTranslationEntry(task, target, source, {
+          qualityOk: false,
+          reason: String(quality.reason || "QUALITY_GUARD_FAILED"),
+          provider: String(quality.provider || ""),
+        });
+      }
+      return {
+        changed: !hasUsableCurrent,
+        qualityOk: false,
+        reason: String(quality.reason || "QUALITY_GUARD_FAILED"),
+        provider: String(quality.provider || ""),
+      };
+    }
+    setTaskTranslationEntry(task, target, translated, {
+      qualityOk: true,
+      reason: "",
+      provider: String(quality.provider || ""),
+    });
+    return {
+      changed: true,
+      qualityOk: true,
+      reason: "",
+      provider: String(quality.provider || ""),
+    };
   }
 
   async function cacheTaskTranslationsOnSave(task) {
     if (!task || typeof task !== "object") {
-      return { changed: false, hasError: false };
+      return { changed: false, hasError: false, qualityFailed: false };
     }
     const targets = ["zh", "en"];
     const results = await Promise.allSettled(
@@ -2385,12 +2503,15 @@
       }),
     );
     const changed = results.some(function (result) {
-      return result.status === "fulfilled" && Boolean(result.value);
+      return result.status === "fulfilled" && Boolean(result.value && result.value.changed);
     });
     const hasError = results.some(function (result) {
       return result.status === "rejected";
     });
-    return { changed, hasError };
+    const qualityFailed = results.some(function (result) {
+      return result.status === "fulfilled" && isTranslationQualityFailureResult(result.value);
+    });
+    return { changed, hasError, qualityFailed };
   }
 
   function scheduleTaskTranslationCache(task) {
@@ -2399,7 +2520,7 @@
     }
     setTaskTranslationInProgress(task.id, true);
     (async function () {
-      let result = { changed: false, hasError: false };
+      let result = { changed: false, hasError: false, qualityFailed: false };
       try {
         result = await cacheTaskTranslationsOnSave(task);
         if (result.changed) {
@@ -2414,6 +2535,9 @@
       }
       if (result.changed) {
         renderAll();
+      }
+      if (result.qualityFailed) {
+        showToast(getUiText("translationQualityFallback"));
       }
     })();
   }
@@ -2437,11 +2561,17 @@
     renderAll();
 
     try {
-      await translateTaskDescriptionForLanguage(task, target, { force: true });
-      touchTask(task);
-      saveTasks();
+      const translateResult = await translateTaskDescriptionForLanguage(task, target, { force: true });
+      if (translateResult && translateResult.changed) {
+        touchTask(task);
+        saveTasks();
+      }
       renderAll();
-      showToast(target === "en" ? "Translated and cached." : "已翻譯並寫入快取。");
+      if (translateResult && translateResult.qualityOk === false) {
+        showToast(getUiText("translationQualityFallback"));
+      } else {
+        showToast(target === "en" ? "Translated and cached." : "已翻譯並寫入快取。");
+      }
     } catch (error) {
       console.error("handleTranslateSingleTask error", error);
       showToast(
@@ -2771,6 +2901,9 @@
     }
     if (els.teamStatusClose) {
       els.teamStatusClose.addEventListener("click", handleTeamStatusClose);
+    }
+    if (els.teamStatusList) {
+      els.teamStatusList.addEventListener("click", handleTeamStatusListClick);
     }
     window.addEventListener("resize", syncMobileReminderUi);
     window.addEventListener("scroll", updateMobileFloatingVisibility, { passive: true });
@@ -4657,6 +4790,26 @@
     applyRolePermissionUi();
   }
 
+  function handleTeamStatusListClick(event) {
+    const trigger = event && event.target ? event.target.closest("[data-team-user]") : null;
+    if (!trigger) {
+      return;
+    }
+    const username = normalizeAccountName(trigger.getAttribute("data-team-user") || "");
+    if (!username) {
+      return;
+    }
+    if (!state.teamStatusExpandedUsers || typeof state.teamStatusExpandedUsers !== "object") {
+      state.teamStatusExpandedUsers = {};
+    }
+    if (state.teamStatusExpandedUsers[username]) {
+      delete state.teamStatusExpandedUsers[username];
+    } else {
+      state.teamStatusExpandedUsers[username] = true;
+    }
+    renderTeamStatusPanel();
+  }
+
   function startTeamStatusLoop() {
     if (state.teamStatusTimer) {
       clearInterval(state.teamStatusTimer);
@@ -4678,6 +4831,7 @@
 
     if (!canViewTeamStatusPanel()) {
       state.teamStatusItems = [];
+      state.teamStatusExpandedUsers = {};
       renderTeamStatusPanel();
       return;
     }
@@ -4778,6 +4932,18 @@
       .filter(function (item) {
         return Boolean(item.username);
       });
+    {
+      const currentExpanded = state.teamStatusExpandedUsers && typeof state.teamStatusExpandedUsers === "object"
+        ? state.teamStatusExpandedUsers
+        : {};
+      const nextExpanded = {};
+      state.teamStatusItems.forEach(function (item) {
+        if (currentExpanded[item.username]) {
+          nextExpanded[item.username] = true;
+        }
+      });
+      state.teamStatusExpandedUsers = nextExpanded;
+    }
     state.teamStatusLoading = false;
     state.teamStatusLastError = "";
     renderTeamStatusPanel();
@@ -4816,13 +4982,19 @@
   }
 
   function countActiveTasksForAssignee(username) {
+    return getActiveTasksForAssignee(username).length;
+  }
+
+  function getActiveTasksForAssignee(username) {
     const normalized = normalizeAccountName(username);
     if (!normalized) {
-      return 0;
+      return [];
     }
-    return state.tasks.filter(function (task) {
-      return normalizeAccountName(task.assignee || "") === normalized && isTaskActiveStatus(task.status);
-    }).length;
+    return state.tasks
+      .filter(function (task) {
+        return normalizeAccountName(task.assignee || "") === normalized && isTaskActiveStatus(task.status);
+      })
+      .sort(sortByDueTime);
   }
 
   function renderTeamStatusPanel() {
@@ -4876,11 +5048,60 @@
           getUiText("teamLastActiveAt") +
           "：" +
           (item.lastActiveAt ? formatDateTime(item.lastActiveAt) : "-");
+        const expanded = Boolean(
+          state.teamStatusExpandedUsers &&
+            typeof state.teamStatusExpandedUsers === "object" &&
+            state.teamStatusExpandedUsers[item.username],
+        );
+        const activeTasks = expanded ? getActiveTasksForAssignee(item.username).slice(0, 8) : [];
+        const taskListHtml = expanded
+          ? '<div class="team-status-task-wrap">' +
+            '<p class="team-status-task-title">' +
+            escapeHtml(getUiText("teamTaskListLabel")) +
+            "</p>" +
+            '<ul class="team-status-task-list">' +
+            (activeTasks.length === 0
+              ? '<li class="team-status-task-empty">' + escapeHtml(getUiText("teamTaskListEmpty")) + "</li>"
+              : activeTasks
+                  .map(function (task) {
+                    const status = getTaskStatusText(task);
+                    const due = formatDueDisplay(task);
+                    const title = getTaskDisplayField(task, "title") || task.title || "-";
+                    const category = getCategoryDisplayName(task.category || getUiText("uncategorized"));
+                    const subcategory = getSubcategoryDisplayName(task.subcategory || "");
+                    const categoryText = subcategory ? category + " / " + subcategory : category;
+                    return (
+                      '<li class="team-status-task-item">' +
+                      '<div class="team-status-task-main">' +
+                      '<span class="team-status-task-status">' +
+                      escapeHtml(status) +
+                      "</span>" +
+                      '<span class="team-status-task-time">' +
+                      escapeHtml(due) +
+                      "</span>" +
+                      "</div>" +
+                      '<p class="team-status-task-name">' +
+                      escapeHtml(title) +
+                      "</p>" +
+                      '<p class="team-status-task-meta">' +
+                      escapeHtml(categoryText) +
+                      "</p>" +
+                      "</li>"
+                    );
+                  })
+                  .join("")) +
+            "</ul>" +
+            "</div>"
+          : "";
         return (
           '<li class="team-status-card team-status-' +
           escapeHtml(item.onlineStatus) +
           '">' +
-          '<div class="team-status-card-top">' +
+          '<button class="team-status-card-top team-status-card-toggle" type="button" data-team-user="' +
+          escapeHtml(item.username) +
+          '" aria-expanded="' +
+          (expanded ? "true" : "false") +
+          '">' +
           '<span class="team-status-dot" aria-hidden="true"></span>' +
           '<span class="team-status-name">' +
           escapeHtml(item.displayName || item.username) +
@@ -4888,7 +5109,10 @@
           '<span class="team-status-state">' +
           escapeHtml(statusText) +
           "</span>" +
-          "</div>" +
+          '<span class="team-status-expand-indicator" aria-hidden="true">' +
+          (expanded ? "−" : "+") +
+          "</span>" +
+          "</button>" +
           '<div class="team-status-meta">' +
           '<span>' +
           escapeHtml(activeText) +
@@ -4897,6 +5121,7 @@
           escapeHtml(lastActiveText) +
           "</span>" +
           "</div>" +
+          taskListHtml +
           "</li>"
         );
       })
