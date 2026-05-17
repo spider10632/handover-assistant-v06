@@ -5096,10 +5096,12 @@
         return (
           '<li class="team-status-card team-status-' +
           escapeHtml(item.onlineStatus) +
-          '">' +
-          '<button class="team-status-card-top team-status-card-toggle" type="button" data-team-user="' +
+          '" data-team-user="' +
           escapeHtml(item.username) +
           '" aria-expanded="' +
+          (expanded ? "true" : "false") +
+          '">' +
+          '<button class="team-status-card-top team-status-card-toggle" type="button" aria-expanded="' +
           (expanded ? "true" : "false") +
           '">' +
           '<span class="team-status-dot" aria-hidden="true"></span>' +
@@ -5109,15 +5111,17 @@
           '<span class="team-status-state">' +
           escapeHtml(statusText) +
           "</span>" +
+          "</button>" +
+          '<div class="team-status-meta">' +
+          '<div class="team-status-meta-row">' +
+          '<span class="team-status-meta-main">' +
+          escapeHtml(activeText) +
+          "</span>" +
           '<span class="team-status-expand-indicator" aria-hidden="true">' +
           (expanded ? "−" : "+") +
           "</span>" +
-          "</button>" +
-          '<div class="team-status-meta">' +
-          '<span>' +
-          escapeHtml(activeText) +
-          "</span>" +
-          '<span>' +
+          "</div>" +
+          '<span class="team-status-meta-sub">' +
           escapeHtml(lastActiveText) +
           "</span>" +
           "</div>" +

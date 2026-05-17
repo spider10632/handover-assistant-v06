@@ -1414,6 +1414,7 @@ td {
   font-size: 0.95rem;
   font-weight: 800;
   line-height: 1;
+  flex: 0 0 auto;
 }
 
 .team-status-meta {
@@ -1423,6 +1424,26 @@ td {
   color: #c7c0b2;
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.team-status-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.team-status-meta-main {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-status-meta-sub {
+  display: block;
 }
 
 .team-status-task-wrap {
