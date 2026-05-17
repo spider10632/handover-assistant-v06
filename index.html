@@ -21,7 +21,7 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/tabler-icons.min.css"
     />
-    <link rel="stylesheet" href="styles.css?v=20260413-03" />
+    <link rel="stylesheet" href="styles.css?v=20260517-team1" />
   </head>
   <body>
     <div class="bg-shape shape-a"></div>
@@ -373,7 +373,29 @@
       </div>
     </aside>
 
+    <aside id="team-status-panel" class="team-status-panel hidden" aria-live="polite">
+      <div class="team-status-head">
+        <div>
+          <h3 id="team-status-title">Team Status</h3>
+          <p id="team-status-subtitle">Live staff status</p>
+        </div>
+        <button id="team-status-close" class="btn btn-ghost team-status-close" type="button">Close</button>
+      </div>
+      <ul id="team-status-list" class="team-status-list">
+        <li class="team-status-empty">No staff to display.</li>
+      </ul>
+    </aside>
+
     <div id="mobile-upcoming-overlay" class="mobile-upcoming-overlay" aria-hidden="true"></div>
+    <button
+      id="team-status-toggle"
+      class="team-status-toggle hidden"
+      type="button"
+      aria-expanded="false"
+      aria-controls="team-status-panel"
+    >
+      <span id="team-status-toggle-text">Team</span>
+    </button>
     <button id="mobile-add-btn" class="mobile-add-btn" type="button" aria-label="前往新增交接待辦">
       <span aria-hidden="true">+</span>
     </button>
@@ -395,6 +417,6 @@
     <script>
       window.HANDOVER_CLOUD_API_BASE = "https://handover-cloud-api.spider10632.workers.dev";
     </script>
-    <script src="app.js?v=20260413-06" defer></script>
+    <script src="app.js?v=20260517-team1" defer></script>
   </body>
 </html>

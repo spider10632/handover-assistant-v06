@@ -13,6 +13,7 @@ const AUDIT_MAX_LIMIT = 500;
 const ACCOUNT_ROLES = new Set(["admin", "manager", "staff"]);
 const PUSH_EVENTS_FETCH_LIMIT = 20;
 const VAPID_JWT_TTL_SECONDS = 12 * 60 * 60;
+let authAccountLastActiveColumnReady = false;
 
 export default {
   async fetch(request, env) {
@@ -188,6 +189,45 @@ async function handleV2Request(request, env, path, allowedUsers, cors) {
       return auth.response;
     }
     return handleListAccountsForServer(env, serverId, cors);
+  }
+
+  const teamMatch = path.match(/^\/v2\/team\/([a-z0-9_-]+)\/(status|activity)$/i);
+  if (teamMatch) {
+    const serverId = normalizeServerId(teamMatch[1]);
+    const action = String(teamMatch[2] || "").toLowerCase();
+    if (!serverId) {
+      return jsonResponse({ ok: false, error: "INVALID_SERVER_ID" }, 400, cors);
+    }
+    if (serverId !== "test") {
+      return jsonResponse({ ok: false, error: "FORBIDDEN_SERVER" }, 403, cors);
+    }
+    if (allowedUsers.size > 0 && !allowedUsers.has(serverId)) {
+      return jsonResponse({ ok: false, error: "FORBIDDEN_SERVER" }, 403, cors);
+    }
+    if (action === "status") {
+      if (request.method !== "GET") {
+        return jsonResponse({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405, {
+          ...cors,
+          allow: "GET, OPTIONS",
+        });
+      }
+      const auth = await requireManagerSession(request, env, serverId, cors);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      return handleTeamStatus(env, serverId, cors);
+    }
+    if (request.method !== "POST") {
+      return jsonResponse({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405, {
+        ...cors,
+        allow: "POST, OPTIONS",
+      });
+    }
+    const auth = await requireSession(request, env, serverId, cors);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    return handleTeamActivity(env, serverId, auth.session, cors);
   }
 
   const pushSubMatch = path.match(/^\/v2\/push\/([a-z0-9_-]+)\/(subscribe|unsubscribe)$/i);
@@ -397,6 +437,7 @@ async function handleV2Login(request, env, allowedUsers, cors) {
   }
 
   await ensureBootstrapAccounts(env, serverId);
+  await ensureAuthAccountLastActiveColumn(env);
 
   const passwordHash = await hashLoginPassword(serverId, password);
   const row = await env.DB.prepare(
@@ -429,6 +470,8 @@ async function handleV2Login(request, env, allowedUsers, cors) {
   )
     .bind(tokenHash, serverId, username, role, createdAt, expiresAt)
     .run();
+
+  await updateAccountLastActive(env, serverId, username, createdAt);
 
   await insertAuditLog(env, {
     serverId,
@@ -541,6 +584,77 @@ async function requireAdminSession(request, env, serverId, cors) {
     };
   }
   return auth;
+}
+
+async function requireManagerSession(request, env, serverId, cors) {
+  const auth = await requireSession(request, env, serverId, cors);
+  if (!auth.ok) {
+    return auth;
+  }
+  if (auth.session.role !== "admin" && auth.session.role !== "manager") {
+    return {
+      ok: false,
+      response: jsonResponse({ ok: false, error: "FORBIDDEN_ROLE" }, 403, cors),
+    };
+  }
+  return auth;
+}
+
+async function ensureAuthAccountLastActiveColumn(env) {
+  if (!env || !env.DB || authAccountLastActiveColumnReady) {
+    return;
+  }
+  try {
+    await env.DB.prepare("ALTER TABLE auth_accounts ADD COLUMN last_active_at TEXT").run();
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error || "").toLowerCase();
+    if (!message.includes("duplicate column") && !message.includes("already exists")) {
+      throw error;
+    }
+  }
+  authAccountLastActiveColumnReady = true;
+}
+
+async function updateAccountLastActive(env, serverId, username, timestamp) {
+  await ensureAuthAccountLastActiveColumn(env);
+  const at = String(timestamp || new Date().toISOString());
+  await env.DB.prepare("UPDATE auth_accounts SET last_active_at = ? WHERE server_id = ? AND username = ?")
+    .bind(at, serverId, username)
+    .run();
+}
+
+async function handleTeamActivity(env, serverId, actorSession, cors) {
+  const at = new Date().toISOString();
+  await updateAccountLastActive(env, serverId, actorSession.username, at);
+  return jsonResponse({ ok: true, lastActiveAt: at }, 200, cors);
+}
+
+async function handleTeamStatus(env, serverId, cors) {
+  await ensureBootstrapAccounts(env, serverId);
+  await ensureAuthAccountLastActiveColumn(env);
+  const result = await env.DB.prepare(
+    "SELECT username, role, last_active_at FROM auth_accounts WHERE server_id = ? AND enabled = 1 AND role = 'staff' ORDER BY username ASC",
+  )
+    .bind(serverId)
+    .all();
+  const rows = Array.isArray(result && result.results) ? result.results : [];
+  return jsonResponse(
+    {
+      ok: true,
+      serverId,
+      staff: rows.map((row) => {
+        const username = normalizeAccountName(row.username);
+        return {
+          username,
+          displayName: username,
+          role: normalizeAccountRole(row.role) || "staff",
+          lastActiveAt: String(row.last_active_at || ""),
+        };
+      }),
+    },
+    200,
+    cors,
+  );
 }
 
 async function handleAdminListAccounts(env, serverId, cors) {

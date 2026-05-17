@@ -42,6 +42,10 @@
   const OVERDUE_NOTICE_KEEP_MS = 60 * 60 * 1000;
   const ASSIGN_WATCH_5_MIN_MS = 5 * 60 * 1000;
   const ASSIGN_WATCH_10_MIN_MS = 10 * 60 * 1000;
+  const TEAM_STATUS_POLL_MS = 5000;
+  const TEAM_ACTIVITY_PING_MS = 60000;
+  const TEAM_ONLINE_MS = 5 * 60 * 1000;
+  const TEAM_IDLE_MS = 30 * 60 * 1000;
   const TOAST_MS = 3000;
   const MOBILE_MAX_WIDTH = 760;
   const CATEGORIES = ["廣場", "包裹代收", "車輛安排", "大廳", "會議室", "團桌", "客房", "預訂", "餐飲部", "待回覆信件", "郵寄", "行政", "公告", "遺留物"];
@@ -141,6 +145,17 @@
       assignmentWatchOverdueLabel: "逾時",
       assignmentWatchReminderTitle: "指派監視提醒",
       assignmentWatchReminderText: "待辦「{title}」已逾時 {minutes} 分鐘（指派：{assignee}）。",
+      teamButton: "團隊",
+      teamPanelTitle: "團隊狀態",
+      teamPanelSubtitle: "即時人員狀態",
+      teamClose: "關閉",
+      teamEmpty: "目前沒有可顯示的 staff。",
+      teamLoadError: "Team 狀態讀取失敗。",
+      teamActiveTaskCount: "目前事項",
+      teamLastActiveAt: "最後活動",
+      teamStatusOnline: "在線",
+      teamStatusIdle: "閒置",
+      teamStatusOffline: "離線",
       taskListFilterLabel: "篩選",
       exportDateLabel: "匯出日期",
       exportStatusLabel: "匯出狀態",
@@ -170,7 +185,10 @@
       todayNoNormal: "今日一般事項為 0 筆。",
       tableHeaders: ["狀態", "置頂", "主分類", "子分類", "事項", "填寫人", "完成人", "時間", "交接說明", "操作"],
       statusPending: "待處理",
+      statusInProgress: "處理中",
       statusDone: "已完成",
+      actionStartProgress: "開始處理",
+      actionBackPending: "取消處理",
       actionComplete: "完成",
       actionUndoComplete: "取消完成",
       actionEdit: "修改",
@@ -257,6 +275,17 @@
       assignmentWatchOverdueLabel: "Overdue",
       assignmentWatchReminderTitle: "Assignment Watch",
       assignmentWatchReminderText: 'Task "{title}" is overdue by {minutes} min (Assignee: {assignee}).',
+      teamButton: "Team",
+      teamPanelTitle: "Team Status",
+      teamPanelSubtitle: "Live staff status",
+      teamClose: "Close",
+      teamEmpty: "No staff to display.",
+      teamLoadError: "Failed to load team status.",
+      teamActiveTaskCount: "Active Tasks",
+      teamLastActiveAt: "Last Active",
+      teamStatusOnline: "online",
+      teamStatusIdle: "idle",
+      teamStatusOffline: "offline",
       taskListFilterLabel: "Filter",
       exportDateLabel: "Export Date",
       exportStatusLabel: "Export Status",
@@ -286,7 +315,10 @@
       todayNoNormal: "No regular pending items today.",
       tableHeaders: ["Status", "Pinned", "Category", "Subcategory", "Task", "Owner", "Done By", "Time", "Notes", "Actions"],
       statusPending: "Pending",
+      statusInProgress: "In Progress",
       statusDone: "Done",
+      actionStartProgress: "Start",
+      actionBackPending: "Back to Pending",
       actionComplete: "Done",
       actionUndoComplete: "Undo",
       actionEdit: "Edit",
@@ -429,6 +461,13 @@
     reminderTimer: null,
     countdownTimer: null,
     mobileUpcomingOpen: false,
+    teamPanelOpen: false,
+    teamStatusItems: [],
+    teamStatusLoading: false,
+    teamStatusLastError: "",
+    teamStatusTimer: null,
+    teamActivityTimer: null,
+    teamLastActivityPingAt: 0,
     currentServerId: null,
     currentServerConfig: null,
     currentProfile: null,
@@ -517,6 +556,7 @@
       startCountdownLoop();
       startPushSyncLoop();
       startCloudPullLoop();
+      startTeamStatusLoop();
       initCloudSync();
     };
     renderAll();
@@ -683,6 +723,10 @@
     setElementText("export-excel-btn", getUiText("exportExcel"));
     setElementText("upcoming-title", getUiText("upcomingTitle"));
     setElementText("mobile-upcoming-close", getUiText("close"));
+    setElementText("team-status-toggle-text", getUiText("teamButton"));
+    setElementText("team-status-title", getUiText("teamPanelTitle"));
+    setElementText("team-status-subtitle", getUiText("teamPanelSubtitle"));
+    setElementText("team-status-close", getUiText("teamClose"));
     setElementText("notification-toggle-label", getUiText("notificationToggleLabel"));
     setElementText("request-notification-btn", getUiText("requestNotification"));
     setElementPlaceholder("task-title", getUiText("taskTitlePlaceholder"));
@@ -703,6 +747,9 @@
     }
     if (els.mobileTopBtn) {
       els.mobileTopBtn.setAttribute("aria-label", lang === "en" ? "Back to top" : "回到頂部");
+    }
+    if (els.teamStatusToggle) {
+      els.teamStatusToggle.setAttribute("aria-label", getUiText("teamPanelTitle"));
     }
     if (els.tableHeaderCells && els.tableHeaderCells.length > 0) {
       const labels = getUiText("tableHeaders");
@@ -1002,6 +1049,24 @@
     return base + "/v2/auth/login";
   }
 
+  function buildTeamStatusUrl(baseUrl, serverId) {
+    const base = normalizeCloudApiBase(baseUrl);
+    const normalizedServerId = normalizeServerInput(serverId || "");
+    if (!base || !normalizedServerId) {
+      return "";
+    }
+    return base + "/v2/team/" + encodeURIComponent(normalizedServerId) + "/status";
+  }
+
+  function buildTeamActivityUrl(baseUrl, serverId) {
+    const base = normalizeCloudApiBase(baseUrl);
+    const normalizedServerId = normalizeServerInput(serverId || "");
+    if (!base || !normalizedServerId) {
+      return "";
+    }
+    return base + "/v2/team/" + encodeURIComponent(normalizedServerId) + "/activity";
+  }
+
   function shouldUseV2StateApi(serverId) {
     const normalizedServerId = normalizeServerInput(serverId || "");
     if (!normalizedServerId) {
@@ -1058,6 +1123,11 @@
     return role === "admin" || role === "manager";
   }
 
+  function canViewTeamStatusPanel() {
+    const serverId = normalizeServerInput(state.currentServerId || "");
+    return serverId === "test" && canAssignToOthers() && Boolean(state.authToken);
+  }
+
   function canViewTaskByAssignee(task) {
     const assignee = normalizeAccountName(task && task.assignee ? task.assignee : "");
     if (!assignee) {
@@ -1107,6 +1177,24 @@
     }
     if (els.assignmentWatchPanel) {
       els.assignmentWatchPanel.classList.toggle("hidden", !canAssignToOthers());
+    }
+    if (!canViewTeamStatusPanel()) {
+      state.teamPanelOpen = false;
+      if (els.teamStatusToggle) {
+        els.teamStatusToggle.classList.add("hidden");
+        els.teamStatusToggle.setAttribute("aria-expanded", "false");
+      }
+      if (els.teamStatusPanel) {
+        els.teamStatusPanel.classList.add("hidden");
+      }
+      return;
+    }
+    if (els.teamStatusToggle) {
+      els.teamStatusToggle.classList.remove("hidden");
+      els.teamStatusToggle.setAttribute("aria-expanded", state.teamPanelOpen ? "true" : "false");
+    }
+    if (els.teamStatusPanel) {
+      els.teamStatusPanel.classList.toggle("hidden", !state.teamPanelOpen);
     }
   }
 
@@ -2574,6 +2662,12 @@
     els.mobileUpcomingClose = document.getElementById("mobile-upcoming-close");
     els.mobileUpcomingOverlay = document.getElementById("mobile-upcoming-overlay");
     els.mobileTopBtn = document.getElementById("mobile-top-btn");
+    els.teamStatusToggle = document.getElementById("team-status-toggle");
+    els.teamStatusPanel = document.getElementById("team-status-panel");
+    els.teamStatusTitle = document.getElementById("team-status-title");
+    els.teamStatusSubtitle = document.getElementById("team-status-subtitle");
+    els.teamStatusClose = document.getElementById("team-status-close");
+    els.teamStatusList = document.getElementById("team-status-list");
     els.exportDate = document.getElementById("export-date");
     els.exportStatus = document.getElementById("export-status");
     els.taskListFilter = document.getElementById("task-list-filter");
@@ -2672,8 +2766,16 @@
     if (els.mobileAddBtn) {
       els.mobileAddBtn.addEventListener("click", handleMobileAddClick);
     }
+    if (els.teamStatusToggle) {
+      els.teamStatusToggle.addEventListener("click", handleTeamStatusToggle);
+    }
+    if (els.teamStatusClose) {
+      els.teamStatusClose.addEventListener("click", handleTeamStatusClose);
+    }
     window.addEventListener("resize", syncMobileReminderUi);
     window.addEventListener("scroll", updateMobileFloatingVisibility, { passive: true });
+    window.addEventListener("pointerdown", markTeamActivitySoon, { passive: true });
+    window.addEventListener("keydown", markTeamActivitySoon);
     if (els.panelToggleButtons.length > 0) {
       els.panelToggleButtons.forEach(function (btn) {
         btn.addEventListener("click", handlePanelToggle);
@@ -2682,11 +2784,13 @@
 
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) {
+        markTeamActivitySoon();
         checkReminders();
         triggerCloudPull({ force: true });
       }
     });
     window.addEventListener("focus", function () {
+      markTeamActivitySoon();
       triggerCloudPull({ force: true });
     });
     if ("serviceWorker" in navigator) {
@@ -2695,6 +2799,10 @@
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape" && state.mobileUpcomingOpen) {
         handleMobileUpcomingClose();
+        return;
+      }
+      if (event.key === "Escape" && state.teamPanelOpen) {
+        handleTeamStatusClose();
       }
     });
   }
@@ -3354,6 +3462,47 @@
     scheduleCloudPush();
   }
 
+  function normalizeTaskStatus(value) {
+    const raw = String(value || "").trim();
+    if (raw === "done") {
+      return "done";
+    }
+    if (raw === "inProgress" || raw === "in_progress" || raw === "processing") {
+      return "inProgress";
+    }
+    return "pending";
+  }
+
+  function isTaskDoneStatus(status) {
+    return normalizeTaskStatus(status) === "done";
+  }
+
+  function isTaskActiveStatus(status) {
+    return !isTaskDoneStatus(status);
+  }
+
+  function getTaskStatusClass(task) {
+    const status = normalizeTaskStatus(task && task.status);
+    if (status === "done") {
+      return "status-done";
+    }
+    if (status === "inProgress") {
+      return "status-progress";
+    }
+    return "status-pending";
+  }
+
+  function getTaskStatusText(task) {
+    const status = normalizeTaskStatus(task && task.status);
+    if (status === "done") {
+      return getUiText("statusDone");
+    }
+    if (status === "inProgress") {
+      return getUiText("statusInProgress");
+    }
+    return getUiText("statusPending");
+  }
+
   function normalizeTask(input) {
     if (!input || typeof input !== "object") {
       return null;
@@ -3373,7 +3522,7 @@
     if (hasStartAt && hasEndAt && endMs < startMs) {
       return null;
     }
-    const status = input.status === "done" ? "done" : "pending";
+    const status = normalizeTaskStatus(input.status);
     const allDay = Boolean(input.allDay);
     const remindedAtMs = input.remindedAt ? new Date(input.remindedAt).getTime() : Number.NaN;
     const assigneeRemind5AtMs = input.assigneeRemind5At ? new Date(input.assigneeRemind5At).getTime() : Number.NaN;
@@ -3480,7 +3629,7 @@
         previousStartAt !== range.startAtIso ||
         previousEndAt !== range.endAtIso ||
         previousAllDay !== allDay;
-      if (task.status === "pending") {
+      if (isTaskActiveStatus(task.status)) {
         task.remindedAt = null;
         if (watchScopeChanged) {
           clearAssignmentWatchReminderState(task);
@@ -3629,7 +3778,7 @@
     }
 
     if (action === "toggle") {
-      if (task.status === "pending") {
+      if (isTaskActiveStatus(task.status)) {
         const input = window.prompt(
           normalizeUiLanguage(state.uiLanguage) === "en" ? "Please enter completed by:" : "請輸入完成人：",
           task.completedBy || "",
@@ -3664,6 +3813,29 @@
           : normalizeUiLanguage(state.uiLanguage) === "en"
             ? "Restored to pending."
             : "已恢復為待辦。",
+      );
+      return;
+    }
+
+    if (action === "progress") {
+      if (isTaskDoneStatus(task.status)) {
+        return;
+      }
+      task.status = normalizeTaskStatus(task.status) === "inProgress" ? "pending" : "inProgress";
+      task.completedBy = "";
+      task.remindedAt = null;
+      clearAssignmentWatchReminderState(task);
+      touchTask(task);
+      renderAll();
+      saveTasks();
+      showToast(
+        task.status === "inProgress"
+          ? normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Started."
+            : "已開始處理。"
+          : normalizeUiLanguage(state.uiLanguage) === "en"
+            ? "Restored to pending."
+            : "已恢復為待處理。",
       );
       return;
     }
@@ -3855,6 +4027,7 @@
     renderAssignmentWatchBoard();
     renderTodayTasks();
     renderUpcomingBoard();
+    renderTeamStatusPanel();
   }
 
   function renderQueryText() {
@@ -3887,12 +4060,12 @@
 
     const pinnedList = state.tasks
       .filter(function (task) {
-        return Boolean(task.pinned) && task.status === "pending" && isTaskInDateRange(task, todayKey);
+        return Boolean(task.pinned) && isTaskActiveStatus(task.status) && isTaskInDateRange(task, todayKey);
       })
       .sort(sortByDueTime);
 
     const normalList = todayAllList.filter(function (task) {
-      return task.status === "pending" && !task.pinned;
+      return isTaskActiveStatus(task.status) && !task.pinned;
     });
 
     const categoryLabel = selectedCategory === "all" ? "全部主分類" : selectedCategory;
@@ -3913,7 +4086,7 @@
     }
 
     const pendingCount = todayAllList.filter(function (task) {
-      return task.status === "pending";
+      return isTaskActiveStatus(task.status);
     }).length;
     const doneCount = todayAllList.length - pendingCount;
     els.todayTaskSummary.textContent = getUiText("todaySummary", {
@@ -3934,12 +4107,14 @@
   }
 
   function renderTodayTaskItem(task, inPinnedZone) {
-    const isDone = task.status === "done";
-    const statusClass = isDone ? "status-done" : "status-pending";
-    const statusText = isDone ? getUiText("statusDone") : getUiText("statusPending");
+    const isDone = isTaskDoneStatus(task.status);
+    const isInProgress = normalizeTaskStatus(task.status) === "inProgress";
+    const statusClass = getTaskStatusClass(task);
+    const statusText = getTaskStatusText(task);
     const pinTag = task.pinned ? '<span class="today-pill">' + escapeHtml(getUiText("pinned")) + "</span>" : "";
     const pinBtnText = task.pinned ? getUiText("actionUnpin") : getUiText("actionPin");
     const doneBtnText = isDone ? getUiText("actionUndoComplete") : getUiText("actionComplete");
+    const progressBtnText = isInProgress ? getUiText("actionBackPending") : getUiText("actionStartProgress");
     const copyDisabledAttr = getDisabledAttr(!canUseTaskAction("copy"));
     const pinDisabledAttr = getDisabledAttr(!canUseTaskAction("pin"));
     const cancelDisabledAttr = getDisabledAttr(!canUseTaskAction("delete"));
@@ -4017,6 +4192,13 @@
       '">' +
       doneBtnText +
       "</button>" +
+      (!isDone
+        ? '<button class="action-btn action-progress" type="button" data-action="progress" data-id="' +
+          escapeHtml(task.id) +
+          '">' +
+          progressBtnText +
+          "</button>"
+        : "") +
       '<button class="action-btn action-edit" type="button" data-action="edit" data-id="' +
       escapeHtml(task.id) +
       '">' +
@@ -4076,9 +4258,10 @@
 
     els.tableBody.innerHTML = list
       .map(function (task) {
-        const isDone = task.status === "done";
-        const statusClass = isDone ? "status-done" : "status-pending";
-        const statusText = isDone ? getUiText("statusDone") : getUiText("statusPending");
+        const isDone = isTaskDoneStatus(task.status);
+        const isInProgress = normalizeTaskStatus(task.status) === "inProgress";
+        const statusClass = getTaskStatusClass(task);
+        const statusText = getTaskStatusText(task);
         const pinnedText = task.pinned ? getUiText("pinned") : "-";
         const pinBtnText = task.pinned ? getUiText("actionUnpin") : getUiText("actionPin");
         const copyDisabledAttr = getDisabledAttr(!canUseTaskAction("copy"));
@@ -4095,7 +4278,7 @@
         const needsManualTranslate = needsTaskManualTranslationForLanguage(task, state.uiLanguage);
         const originalBtnText = showingOriginal ? getUiText("actionShowTranslated") : getUiText("actionShowOriginal");
         const translateBtnText = translationBusy ? getUiText("actionTranslating") : getUiText("actionTranslateTask");
-        const completedByText = task.status === "done" && task.completedBy ? escapeHtml(task.completedBy) : "-";
+        const completedByText = isTaskDoneStatus(task.status) && task.completedBy ? escapeHtml(task.completedBy) : "-";
         const ownerCellText = escapeHtml(task.owner) + "<br><span style=\"color:#766e61;\">" + escapeHtml(getUiText("assignee")) + "：" + escapeHtml(task.assignee || getUiText("taskAssigneeUnassigned")) + "</span>";
         const subcategoryHtml = displaySubcategory
           ? escapeHtml(displaySubcategory)
@@ -4142,6 +4325,13 @@
           '">' +
           (isDone ? getUiText("actionUndoComplete") : getUiText("actionComplete")) +
           "</button>" +
+          (!isDone
+            ? '<button class="action-btn action-progress" type="button" data-action="progress" data-id="' +
+              task.id +
+              '">' +
+              (isInProgress ? getUiText("actionBackPending") : getUiText("actionStartProgress")) +
+              "</button>"
+            : "") +
           '<button class="action-btn action-edit" type="button" data-action="edit" data-id="' +
           task.id +
           '">' +
@@ -4201,7 +4391,7 @@
     state.tasks
       .filter(function (task) {
         return (
-          task.status === "pending" &&
+          isTaskActiveStatus(task.status) &&
           Boolean(getTaskStartAt(task)) &&
           !task.allDay &&
           Boolean(normalizeAccountName(task.assignee)) &&
@@ -4333,7 +4523,7 @@
 
     state.tasks
       .filter(function (task) {
-        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay && canViewTaskByAssignee(task);
+        return isTaskActiveStatus(task.status) && Boolean(getTaskStartAt(task)) && !task.allDay && canViewTaskByAssignee(task);
       })
       .sort(sortByDueTime)
       .forEach(function (task) {
@@ -4438,6 +4628,281 @@
     );
   }
 
+  function canUseTeamActivity() {
+    const serverId = normalizeServerInput(state.currentServerId || "");
+    return serverId === "test" && Boolean(state.authToken);
+  }
+
+  function getTeamRequestHeaders() {
+    return state.authToken ? { Authorization: "Bearer " + state.authToken } : {};
+  }
+
+  function handleTeamStatusToggle() {
+    if (!canViewTeamStatusPanel()) {
+      return;
+    }
+    state.teamPanelOpen = !state.teamPanelOpen;
+    applyRolePermissionUi();
+    renderTeamStatusPanel();
+    if (state.teamPanelOpen) {
+      fetchTeamStatus().catch(function (error) {
+        handleTeamStatusFetchError(error);
+        console.error("fetchTeamStatus error", error);
+      });
+    }
+  }
+
+  function handleTeamStatusClose() {
+    state.teamPanelOpen = false;
+    applyRolePermissionUi();
+  }
+
+  function startTeamStatusLoop() {
+    if (state.teamStatusTimer) {
+      clearInterval(state.teamStatusTimer);
+      state.teamStatusTimer = null;
+    }
+    if (state.teamActivityTimer) {
+      clearInterval(state.teamActivityTimer);
+      state.teamActivityTimer = null;
+    }
+
+    if (canUseTeamActivity()) {
+      markTeamActivitySoon({ force: true });
+      state.teamActivityTimer = setInterval(function () {
+        if (!document.hidden) {
+          markTeamActivitySoon();
+        }
+      }, TEAM_ACTIVITY_PING_MS);
+    }
+
+    if (!canViewTeamStatusPanel()) {
+      state.teamStatusItems = [];
+      renderTeamStatusPanel();
+      return;
+    }
+
+    fetchTeamStatus().catch(function (error) {
+      handleTeamStatusFetchError(error);
+      console.error("fetchTeamStatus error", error);
+    });
+    state.teamStatusTimer = setInterval(function () {
+      if (!document.hidden) {
+        fetchTeamStatus().catch(function (error) {
+          handleTeamStatusFetchError(error);
+          console.error("fetchTeamStatus error", error);
+        });
+      }
+    }, TEAM_STATUS_POLL_MS);
+  }
+
+  function markTeamActivitySoon(options) {
+    if (!canUseTeamActivity()) {
+      return;
+    }
+    const opts = options && typeof options === "object" ? options : {};
+    const force = Boolean(opts.force);
+    const now = Date.now();
+    if (!force && now - Number(state.teamLastActivityPingAt || 0) < TEAM_ACTIVITY_PING_MS) {
+      return;
+    }
+    state.teamLastActivityPingAt = now;
+    postTeamActivity().catch(function (error) {
+      console.error("postTeamActivity error", error);
+    });
+  }
+
+  async function postTeamActivity() {
+    if (!canUseTeamActivity()) {
+      return false;
+    }
+    const server = getCurrentServerConfig();
+    const cloudBase = getCloudApiBase(server);
+    const url = buildTeamActivityUrl(cloudBase, state.currentServerId);
+    if (!url) {
+      return false;
+    }
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: getTeamRequestHeaders(),
+      },
+      CLOUD_REQUEST_TIMEOUT_MS,
+    );
+    return response.ok;
+  }
+
+  async function fetchTeamStatus() {
+    if (!canViewTeamStatusPanel()) {
+      return false;
+    }
+    const server = getCurrentServerConfig();
+    const cloudBase = getCloudApiBase(server);
+    const url = buildTeamStatusUrl(cloudBase, state.currentServerId);
+    if (!url) {
+      return false;
+    }
+
+    state.teamStatusLoading = true;
+    state.teamStatusLastError = "";
+    renderTeamStatusPanel();
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: getTeamRequestHeaders(),
+      },
+      CLOUD_REQUEST_TIMEOUT_MS,
+    );
+    if (!response.ok) {
+      state.teamStatusLastError = "HTTP_" + response.status;
+      state.teamStatusLoading = false;
+      renderTeamStatusPanel();
+      return false;
+    }
+    const parsed = await response.json();
+    const rows = parsed && Array.isArray(parsed.staff) ? parsed.staff : [];
+    state.teamStatusItems = rows
+      .map(function (item) {
+        const username = normalizeAccountName(item && item.username ? item.username : "");
+        return {
+          username: username,
+          displayName: String((item && item.displayName) || username || "").trim(),
+          role: String((item && item.role) || "staff").trim().toLowerCase(),
+          lastActiveAt: String((item && item.lastActiveAt) || "").trim(),
+        };
+      })
+      .filter(function (item) {
+        return Boolean(item.username);
+      });
+    state.teamStatusLoading = false;
+    state.teamStatusLastError = "";
+    renderTeamStatusPanel();
+    return true;
+  }
+
+  function handleTeamStatusFetchError(error) {
+    state.teamStatusLoading = false;
+    state.teamStatusLastError = error && error.message ? String(error.message) : "FETCH_FAILED";
+    renderTeamStatusPanel();
+  }
+
+  function getTeamOnlineStatus(lastActiveAt, nowMs) {
+    const lastMs = lastActiveAt ? Date.parse(String(lastActiveAt)) : Number.NaN;
+    if (!Number.isFinite(lastMs)) {
+      return "offline";
+    }
+    const age = Math.max(0, (Number.isFinite(nowMs) ? nowMs : Date.now()) - lastMs);
+    if (age <= TEAM_ONLINE_MS) {
+      return "online";
+    }
+    if (age < TEAM_IDLE_MS) {
+      return "idle";
+    }
+    return "offline";
+  }
+
+  function getTeamStatusText(status) {
+    if (status === "online") {
+      return getUiText("teamStatusOnline");
+    }
+    if (status === "idle") {
+      return getUiText("teamStatusIdle");
+    }
+    return getUiText("teamStatusOffline");
+  }
+
+  function countActiveTasksForAssignee(username) {
+    const normalized = normalizeAccountName(username);
+    if (!normalized) {
+      return 0;
+    }
+    return state.tasks.filter(function (task) {
+      return normalizeAccountName(task.assignee || "") === normalized && isTaskActiveStatus(task.status);
+    }).length;
+  }
+
+  function renderTeamStatusPanel() {
+    if (!els.teamStatusToggle || !els.teamStatusPanel || !els.teamStatusList) {
+      return;
+    }
+    applyRolePermissionUi();
+    if (!canViewTeamStatusPanel()) {
+      return;
+    }
+
+    if (state.teamStatusLastError) {
+      els.teamStatusList.innerHTML =
+        '<li class="team-status-empty">' + escapeHtml(getUiText("teamLoadError")) + "</li>";
+      return;
+    }
+
+    const now = Date.now();
+    const items = (Array.isArray(state.teamStatusItems) ? state.teamStatusItems : [])
+      .map(function (item) {
+        const status = getTeamOnlineStatus(item.lastActiveAt, now);
+        return Object.assign({}, item, {
+          onlineStatus: status,
+          activeTaskCount: countActiveTasksForAssignee(item.username),
+        });
+      })
+      .sort(function (a, b) {
+        const statusOrder = { online: 0, idle: 1, offline: 2 };
+        const statusDiff = (statusOrder[a.onlineStatus] || 9) - (statusOrder[b.onlineStatus] || 9);
+        if (statusDiff !== 0) {
+          return statusDiff;
+        }
+        const activeDiff = Number(b.activeTaskCount || 0) - Number(a.activeTaskCount || 0);
+        if (activeDiff !== 0) {
+          return activeDiff;
+        }
+        return String(a.displayName || a.username).localeCompare(String(b.displayName || b.username), "zh-Hant");
+      });
+
+    if (items.length === 0) {
+      els.teamStatusList.innerHTML =
+        '<li class="team-status-empty">' + escapeHtml(getUiText("teamEmpty")) + "</li>";
+      return;
+    }
+
+    els.teamStatusList.innerHTML = items
+      .map(function (item) {
+        const statusText = getTeamStatusText(item.onlineStatus);
+        const activeText = getUiText("teamActiveTaskCount") + "：" + String(item.activeTaskCount || 0);
+        const lastActiveText =
+          getUiText("teamLastActiveAt") +
+          "：" +
+          (item.lastActiveAt ? formatDateTime(item.lastActiveAt) : "-");
+        return (
+          '<li class="team-status-card team-status-' +
+          escapeHtml(item.onlineStatus) +
+          '">' +
+          '<div class="team-status-card-top">' +
+          '<span class="team-status-dot" aria-hidden="true"></span>' +
+          '<span class="team-status-name">' +
+          escapeHtml(item.displayName || item.username) +
+          "</span>" +
+          '<span class="team-status-state">' +
+          escapeHtml(statusText) +
+          "</span>" +
+          "</div>" +
+          '<div class="team-status-meta">' +
+          '<span>' +
+          escapeHtml(activeText) +
+          "</span>" +
+          '<span>' +
+          escapeHtml(lastActiveText) +
+          "</span>" +
+          "</div>" +
+          "</li>"
+        );
+      })
+      .join("");
+  }
+
   function getFilteredTasks() {
     return getTasksByDateAndStatus(state.queryDate, state.queryStatus, state.queryCategory, state.queryKeyword);
   }
@@ -4447,12 +4912,12 @@
     const quickFilter = normalizeTaskListFilter(state.taskListFilter);
     if (quickFilter === "pending") {
       return list.filter(function (task) {
-        return task.status === "pending";
+        return isTaskActiveStatus(task.status);
       });
     }
     if (quickFilter === "done") {
       return list.filter(function (task) {
-        return task.status === "done";
+        return isTaskDoneStatus(task.status);
       });
     }
     if (quickFilter === "pinned") {
@@ -4482,6 +4947,7 @@
       renderTodayTasks();
       renderUpcomingBoard();
       renderAssignmentWatchBoard();
+      renderTeamStatusPanel();
     }, COUNTDOWN_REFRESH_MS);
   }
 
@@ -4494,7 +4960,7 @@
     state.tasks
       .filter(function (task) {
         return (
-          task.status === "pending" &&
+          isTaskActiveStatus(task.status) &&
           Boolean(getTaskStartAt(task)) &&
           !task.allDay &&
           Boolean(normalizeAccountName(task.assignee)) &&
@@ -4574,7 +5040,7 @@
 
     const pending = state.tasks
       .filter(function (task) {
-        return task.status === "pending" && Boolean(getTaskStartAt(task)) && !task.allDay && canViewTaskByAssignee(task);
+        return isTaskActiveStatus(task.status) && Boolean(getTaskStartAt(task)) && !task.allDay && canViewTaskByAssignee(task);
       })
       .sort(sortByDueTime);
 
@@ -4808,7 +5274,7 @@
   function buildExcelRows(tasks) {
     const list = Array.isArray(tasks) ? tasks : [];
     return list.map(function (task) {
-      const completedBy = task && task.status === "done" && task.completedBy ? String(task.completedBy).trim() : "-";
+      const completedBy = task && isTaskDoneStatus(task.status) && task.completedBy ? String(task.completedBy).trim() : "-";
       const description = formatExcelDescription(task && task.description ? task.description : "");
       const title = task && task.title ? String(task.title).trim() : "-";
       const timeText = formatExportTaskTime(task);
@@ -5446,7 +5912,7 @@
         if (normalizedStatus === "all") {
           return true;
         }
-        return task.status === normalizedStatus;
+        return normalizedStatus === "pending" ? isTaskActiveStatus(task.status) : isTaskDoneStatus(task.status);
       })
       .sort(sortForTaskTable);
   }
@@ -5599,7 +6065,7 @@
     const includeDatePrefix = Boolean(options && options.includeDatePrefix);
     const categoryText = task.subcategory ? task.category + "/" + task.subcategory : task.category;
     const ownerText = task.owner ? String(task.owner).trim() : "-";
-    const doneBy = task.status === "done" && task.completedBy ? task.completedBy : "-";
+    const doneBy = isTaskDoneStatus(task.status) && task.completedBy ? task.completedBy : "-";
     const descText = task.description ? String(task.description).replace(/\s*\n+\s*/g, " / ").trim() : "-";
     return (
       "- " +
@@ -5836,7 +6302,7 @@
     }
     if (statusValue !== "all") {
       list = list.filter(function (task) {
-        return task.status === statusValue;
+        return statusValue === "pending" ? isTaskActiveStatus(task.status) : isTaskDoneStatus(task.status);
       });
     }
     if (normalizedCategory !== "all") {
@@ -5896,7 +6362,7 @@
     if (!task) {
       return "";
     }
-    const isDone = task.status === "done";
+    const isDone = isTaskDoneStatus(task.status);
     const displayCategory = getCategoryDisplayName(task.category || getUiText("uncategorized")) || "-";
     const displaySubcategory =
       getSubcategoryDisplayName(getTaskDisplayField(task, "subcategory") || task.subcategory) || "-";

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS auth_accounts (
   role TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
+  last_active_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   created_by TEXT,

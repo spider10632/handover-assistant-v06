@@ -63,6 +63,8 @@ body.gate-locked {
 }
 
 body.gate-locked .upcoming-board,
+body.gate-locked .team-status-panel,
+body.gate-locked .team-status-toggle,
 body.gate-locked .mobile-upcoming-overlay,
 body.gate-locked .mobile-add-btn,
 body.gate-locked .mobile-upcoming-toggle,
@@ -827,6 +829,11 @@ textarea {
   background: var(--status-done-bg);
 }
 
+.status-progress {
+  color: #ffffff;
+  background: linear-gradient(120deg, #2f5d50, #24483f);
+}
+
 .panel-heading {
   display: flex;
   align-items: center;
@@ -1052,6 +1059,12 @@ td {
   border-color: rgba(111, 145, 121, 0.35);
 }
 
+.action-progress {
+  color: #563d12;
+  background: linear-gradient(120deg, #f4e4bd, #e4c782);
+  border-color: rgba(165, 126, 57, 0.36);
+}
+
 .action-edit {
   color: #274253;
   background: linear-gradient(120deg, #dfebf3, #d1e0ea);
@@ -1273,6 +1286,157 @@ td {
   background: rgba(18, 25, 22, 0.18);
 }
 
+.team-status-toggle {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 44;
+  min-width: 82px;
+  border: 1px solid rgba(197, 160, 89, 0.58);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: linear-gradient(140deg, rgba(24, 45, 38, 0.98), rgba(32, 58, 50, 0.96));
+  color: #f2dfb7;
+  font-family: "Manrope", "Noto Sans TC", sans-serif;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  box-shadow: 0 10px 20px rgba(18, 14, 9, 0.28);
+  cursor: pointer;
+}
+
+.team-status-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 72px;
+  z-index: 43;
+  width: min(340px, calc(100vw - 28px));
+  max-height: min(58vh, 440px);
+  overflow: auto;
+  border: 1px solid rgba(197, 160, 89, 0.42);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  background: linear-gradient(145deg, rgba(25, 34, 31, 0.98), rgba(18, 28, 25, 0.97));
+  box-shadow: 0 14px 28px rgba(11, 10, 7, 0.34);
+}
+
+.team-status-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.team-status-head h3 {
+  margin: 0;
+  color: #f0dfba;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.team-status-head p {
+  margin: 2px 0 0;
+  color: #bfb19b;
+  font-size: 0.76rem;
+}
+
+.team-status-close {
+  min-width: 0;
+  padding: 5px 9px;
+  color: #eadcc4;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(209, 197, 180, 0.24);
+}
+
+.team-status-list {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.team-status-card {
+  border: 1px solid rgba(209, 197, 180, 0.24);
+  border-left: 4px solid #8f968f;
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: rgba(255, 250, 239, 0.06);
+}
+
+.team-status-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: #8f968f;
+  box-shadow: 0 0 0 3px rgba(143, 150, 143, 0.14);
+}
+
+.team-status-name {
+  min-width: 0;
+  flex: 1;
+  color: #fff8e7;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-status-state {
+  color: #d9c8aa;
+  font-size: 0.73rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.team-status-meta {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  color: #c7c0b2;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.team-status-online {
+  border-left-color: #79a887;
+}
+
+.team-status-online .team-status-dot {
+  background: #79a887;
+  box-shadow: 0 0 0 3px rgba(121, 168, 135, 0.16);
+}
+
+.team-status-idle {
+  border-left-color: #c5a059;
+}
+
+.team-status-idle .team-status-dot {
+  background: #c5a059;
+  box-shadow: 0 0 0 3px rgba(197, 160, 89, 0.16);
+}
+
+.team-status-offline {
+  border-left-color: #8f968f;
+}
+
+.team-status-empty {
+  border: 1px dashed rgba(209, 197, 180, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  color: #d7c9b0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .mobile-upcoming-overlay,
 .mobile-add-btn,
 .mobile-upcoming-toggle,
@@ -1339,12 +1503,14 @@ body.theme-mono .btn-ghost {
 }
 
 body.theme-mono .status-pending,
+body.theme-mono .status-progress,
 body.theme-mono .status-done {
   color: #202020;
   background: linear-gradient(120deg, #dfdfdf, #cbcbcb);
 }
 
 body.theme-mono .action-done,
+body.theme-mono .action-progress,
 body.theme-mono .action-edit,
 body.theme-mono .action-copy,
 body.theme-mono .action-translate,
@@ -1358,6 +1524,12 @@ body.theme-mono .action-cancel {
 }
 
 body.theme-mono .upcoming-board {
+  background: linear-gradient(144deg, rgba(30, 30, 30, 0.97), rgba(48, 48, 48, 0.95));
+  border-color: rgba(176, 176, 176, 0.42);
+}
+
+body.theme-mono .team-status-panel,
+body.theme-mono .team-status-toggle {
   background: linear-gradient(144deg, rgba(30, 30, 30, 0.97), rgba(48, 48, 48, 0.95));
   border-color: rgba(176, 176, 176, 0.42);
 }
@@ -1833,6 +2005,33 @@ body.theme-mono .upcoming-empty {
   }
 
   body.mobile-upcoming-open .mobile-add-btn {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .team-status-toggle {
+    right: 12px;
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    z-index: 84;
+    min-width: 72px;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+  }
+
+  .team-status-panel {
+    top: auto;
+    left: 50%;
+    right: auto;
+    bottom: calc(110px + env(safe-area-inset-bottom));
+    width: min(92vw, 380px);
+    max-height: min(50vh, 430px);
+    transform: translateX(-50%);
+    z-index: 84;
+  }
+
+  body.mobile-upcoming-open .team-status-toggle,
+  body.mobile-upcoming-open .team-status-panel {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
