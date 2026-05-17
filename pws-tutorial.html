@@ -3,19 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PWS 交接系統教學</title>
+    <title>PWS 交接系統全功能教學</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
         --bg: #fbf9f4;
+        --bg-soft: #f5f3ee;
         --panel: #ffffff;
-        --line: rgba(209, 197, 180, 0.55);
+        --line: rgba(209, 197, 180, 0.6);
         --gold: #c5a059;
+        --gold-deep: #7f6024;
         --text: #1b1c19;
         --muted: #5b584f;
       }
@@ -24,41 +26,55 @@
         box-sizing: border-box;
       }
 
+      html,
       body {
         margin: 0;
+        padding: 0;
+      }
+
+      body {
         font-family: "Manrope", "Noto Sans TC", sans-serif;
         color: var(--text);
-        background: linear-gradient(160deg, #fbf9f4, #f5f3ee 70%, #f8f6f1);
+        background: linear-gradient(160deg, #fbf9f4, #f5f3ee 66%, #f8f6f1);
+        line-height: 1.55;
       }
 
       .wrap {
-        width: min(980px, 100%);
+        width: min(1260px, 95vw);
         margin: 0 auto;
-        padding: 22px 14px 36px;
+        padding: 18px 0 44px;
         display: grid;
-        gap: 12px;
+        gap: 14px;
       }
 
       .card {
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 10px;
         padding: 16px;
+        box-shadow: 0 8px 24px rgba(35, 28, 16, 0.05);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.45fr 1fr;
+        gap: 12px;
+        align-items: start;
       }
 
       h1,
-      h2 {
+      h2,
+      h3 {
         margin: 0;
         font-family: "Noto Serif TC", serif;
       }
 
       h1 {
-        font-size: 1.75rem;
+        font-size: 1.86rem;
       }
 
       h2 {
-        font-size: 1.2rem;
-        margin-bottom: 10px;
+        font-size: 1.28rem;
       }
 
       .sub {
@@ -66,11 +82,35 @@
         color: var(--muted);
       }
 
+      .toolbar {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .lang-btn,
+      .system-btn {
+        border: 1px solid rgba(127, 96, 36, 0.3);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--gold-deep);
+        padding: 7px 12px;
+        font-size: 0.86rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .lang-btn.active {
+        background: rgba(197, 160, 89, 0.18);
+      }
+
       .chips {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin-top: 10px;
+        margin-top: 11px;
       }
 
       .chip {
@@ -79,66 +119,77 @@
         color: #6b4f1f;
         border-radius: 999px;
         padding: 4px 10px;
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         font-weight: 700;
+      }
+
+      .toc {
+        display: grid;
+        gap: 8px;
+      }
+
+      .toc a {
+        text-decoration: none;
+        color: #5f4a1a;
+        border: 1px solid rgba(209, 197, 180, 0.5);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-weight: 700;
+        font-size: 0.84rem;
+        background: #fcfaf6;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .pill {
+        border: 1px solid rgba(197, 160, 89, 0.45);
+        border-radius: 999px;
+        padding: 3px 9px;
+        color: #6b4f1f;
+        background: rgba(197, 160, 89, 0.12);
+        font-size: 0.74rem;
+        font-weight: 800;
+      }
+
+      .meta {
+        color: var(--muted);
+        margin: 0 0 10px;
       }
 
       ol,
       ul {
         margin: 0;
-        padding-left: 18px;
+        padding-left: 20px;
       }
 
       li + li {
-        margin-top: 6px;
-      }
-
-      .warn {
-        border: 1px solid rgba(188, 88, 70, 0.34);
-        background: rgba(188, 88, 70, 0.08);
-        border-radius: 8px;
-        padding: 10px 12px;
-        font-size: 0.9rem;
-      }
-
-      .ok {
-        border: 1px solid rgba(95, 138, 109, 0.38);
-        background: rgba(95, 138, 109, 0.1);
-        border-radius: 8px;
-        padding: 10px 12px;
-        font-size: 0.9rem;
-      }
-
-      .quick-link {
-        display: inline-block;
-        margin-top: 8px;
-        text-decoration: none;
-        color: #fff;
-        background: var(--gold);
-        border: 1px solid rgba(154, 122, 66, 0.5);
-        border-radius: 6px;
-        padding: 8px 12px;
-        font-size: 0.86rem;
-        font-weight: 700;
+        margin-top: 5px;
       }
 
       .guide-grid {
+        margin-top: 12px;
         display: grid;
         gap: 12px;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        margin-top: 10px;
       }
 
       .guide-card {
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 10px;
         background: #fcfaf6;
+        padding: 10px;
       }
 
       .guide-card b {
         display: block;
         margin-bottom: 6px;
+        font-size: 0.92rem;
       }
 
       .guide-card img {
@@ -151,20 +202,54 @@
 
       .guide-card p {
         margin: 8px 0 0;
+        font-size: 0.86rem;
         color: var(--muted);
-        font-size: 0.88rem;
-        line-height: 1.45;
       }
 
-      @media (max-width: 960px) {
+      .warn,
+      .ok {
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 0.88rem;
+        margin-top: 10px;
+      }
+
+      .warn {
+        border: 1px solid rgba(188, 88, 70, 0.34);
+        background: rgba(188, 88, 70, 0.08);
+      }
+
+      .ok {
+        border: 1px solid rgba(95, 138, 109, 0.38);
+        background: rgba(95, 138, 109, 0.1);
+      }
+
+      .footer-note {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      @media (max-width: 1120px) {
         .guide-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 880px) {
+        .hero {
           grid-template-columns: 1fr;
+        }
+
+        .toolbar {
+          justify-content: flex-start;
+          flex-wrap: wrap;
         }
       }
 
       @media (max-width: 760px) {
         .wrap {
-          padding: 12px;
+          width: 94vw;
+          padding-top: 12px;
         }
 
         .card {
@@ -172,107 +257,307 @@
         }
 
         h1 {
-          font-size: 1.35rem;
+          font-size: 1.42rem;
+        }
+
+        h2 {
+          font-size: 1.12rem;
+        }
+
+        .guide-grid {
+          grid-template-columns: 1fr;
         }
       }
     </style>
   </head>
   <body>
     <main class="wrap">
-      <section class="card">
-        <h1>PWS 交接系統完整教學</h1>
-        <p class="sub">
-          適用伺服器：<b>test</b>（派單/權限/通知測試）
-        </p>
-        <div class="chips">
-          <span class="chip">登入</span>
-          <span class="chip">派單</span>
-          <span class="chip">權限分級</span>
-          <span class="chip">手機通知</span>
-          <span class="chip">Word/Excel 匯出</span>
+      <section class="card hero">
+        <div>
+          <h1 data-zh="PWS 交接系統全功能教學" data-en="PWS Handover System Full Guide">PWS 交接系統全功能教學</h1>
+          <p class="sub" data-zh="範圍：前台操作 + PWA/通知。所有截圖皆取自 test 伺服器。" data-en="Scope: Frontend workflow + PWA/notifications. All screenshots are captured from test server.">
+            範圍：前台操作 + PWA/通知。所有截圖皆取自 test 伺服器。
+          </p>
+          <div class="chips">
+            <span class="chip">Login</span>
+            <span class="chip">Today Panel</span>
+            <span class="chip">Create/Edit</span>
+            <span class="chip">Assign</span>
+            <span class="chip">Team</span>
+            <span class="chip">PWA</span>
+          </div>
         </div>
-        <a class="quick-link" href="index.html">回到交接系統</a>
+        <div>
+          <div class="toolbar">
+            <button id="lang-zh" class="lang-btn active" type="button">中文</button>
+            <button id="lang-en" class="lang-btn" type="button">English</button>
+            <a class="system-btn" href="index.html" data-zh="回交接系統" data-en="Back to System">回交接系統</a>
+          </div>
+          <div class="toc" style="margin-top: 10px">
+            <a href="#s1" data-zh="1) 登入與伺服器" data-en="1) Login & Server">1) 登入與伺服器</a>
+            <a href="#s2" data-zh="2) 當日事項與置頂" data-en="2) Today Overview & Pinned">2) 當日事項與置頂</a>
+            <a href="#s3" data-zh="3) 新增/修改與指派" data-en="3) Create/Edit & Assignment">3) 新增/修改與指派</a>
+            <a href="#s4" data-zh="4) 查詢與結果操作" data-en="4) Query & Result Actions">4) 查詢與結果操作</a>
+            <a href="#s5" data-zh="5) 指派監視與 Team" data-en="5) Assignment Watch & Team">5) 指派監視與 Team</a>
+            <a href="#s6" data-zh="6) 提醒通知與匯出" data-en="6) Reminders & Export">6) 提醒通知與匯出</a>
+            <a href="#s7" data-zh="7) 手機與 PWA" data-en="7) Mobile & PWA">7) 手機與 PWA</a>
+          </div>
+        </div>
       </section>
 
-      <section class="card">
-        <h2>1. 登入方式</h2>
+      <section id="s1" class="card">
+        <div class="section-head">
+          <h2 data-zh="1. 登入與伺服器" data-en="1. Login & Server">1. 登入與伺服器</h2>
+          <span class="pill" data-zh="全部角色" data-en="All roles">全部角色</span>
+        </div>
+        <p class="meta" data-zh="目的：登入 test 伺服器進入交接作業。" data-en="Goal: Sign in to test server and enter handover workflow.">目的：登入 test 伺服器進入交接作業。</p>
         <ol>
-          <li>打開系統首頁，先輸入「伺服器名稱」。</li>
-          <li><code>test</code> 伺服器需輸入密碼登入（帳號對應角色）。</li>
-          <li>登入成功後，即可開始新增、查詢、派單。</li>
+          <li data-zh="伺服器輸入 test。" data-en="Enter test as server name.">伺服器輸入 test。</li>
+          <li data-zh="密碼輸入你的帳號密碼（例：testmanager / testorder / teststaff）。" data-en="Enter your account password (e.g. testmanager / testorder / teststaff).">密碼輸入你的帳號密碼（例：testmanager / testorder / teststaff）。</li>
+          <li data-zh="登入成功後，會顯示當日事項、新增交接、查詢與匯出區。" data-en="After login, Today panel, Create form, Query and Export panels will appear.">登入成功後，會顯示當日事項、新增交接、查詢與匯出區。</li>
         </ol>
-        <div class="ok" style="margin-top: 10px">
-          建議流程：先用 <b>testmanager</b> 指派任務，再用 <b>teststaff</b> 驗證接單與通知。
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>2. 權限分級</h2>
-        <ul>
-          <li><b>ADMIN</b>：全部功能。</li>
-          <li><b>MANAGER</b>：全部功能（可指派）。</li>
-          <li><b>STAFF</b>：可新增/修改/完成/查詢；不可指派、置頂、刪除、一鍵複製、匯出報表。</li>
-        </ul>
-      </section>
-
-      <section class="card">
-        <h2>3. 新增待辦與指派</h2>
-        <ol>
-          <li>在「新增交接待辦」選主分類與子分類。</li>
-          <li>填寫事項名稱、時間區間（可跨日）、填寫人、交接說明。</li>
-          <li>在「指派給」選擇處理帳號。</li>
-          <li>按「新增待辦」完成建立。</li>
-        </ol>
-        <div class="warn" style="margin-top: 10px">
-          若「指派給」只有「未指定（公用）」：請重新登入後再試，並確認你目前為 manager/admin。
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>4. 手機版 PWA 圖片教學</h2>
-        <ul>
-          <li>先將網頁加到主畫面，再啟用通知授權，才能收到派單提醒。</li>
-          <li>以下為 iPhone、Android、通知設定的操作示意圖。</li>
-        </ul>
-
         <div class="guide-grid">
           <article class="guide-card">
-            <b>iPhone（Safari）</b>
-            <img src="assets/tutorial/pwa-iphone.png" alt="iPhone PWA 安裝步驟" />
-            <p>點「分享」→「加入主畫面」→ 從主畫面圖示開啟系統。</p>
-          </article>
-
-          <article class="guide-card">
-            <b>Android（Chrome）</b>
-            <img src="assets/tutorial/pwa-android.png" alt="Android PWA 安裝步驟" />
-            <p>右上角選單 →「安裝應用程式」或「加入主畫面」。</p>
-          </article>
-
-          <article class="guide-card">
-            <b>通知授權</b>
-            <img src="assets/tutorial/pwa-notify.png" alt="PWA 通知授權步驟" />
-            <p>登入後在系統內按「通知開啟」，瀏覽器跳窗請按「允許」。</p>
+            <b data-zh="登入畫面" data-en="Login Screen">登入畫面</b>
+            <img src="assets/tutorial/full/01-login-server-password.png" data-alt-zh="test 伺服器登入畫面" data-alt-en="Test server login screen" alt="test 伺服器登入畫面" />
+            <p data-zh="先輸入伺服器與密碼。" data-en="Start by entering server name and password.">先輸入伺服器與密碼。</p>
           </article>
         </div>
       </section>
 
-      <section class="card">
-        <h2>5. 常見問題（FAQ）</h2>
+      <section id="s2" class="card">
+        <div class="section-head">
+          <h2 data-zh="2. 當日事項與置頂區" data-en="2. Today Overview & Pinned Zone">2. 當日事項與置頂區</h2>
+          <span class="pill" data-zh="全部角色" data-en="All roles">全部角色</span>
+        </div>
+        <p class="meta" data-zh="目的：快速掌握今天 KPI、置頂交接與主要待辦。" data-en="Goal: Quickly review KPI, pinned handovers and key tasks for today.">目的：快速掌握今天 KPI、置頂交接與主要待辦。</p>
         <ul>
-          <li>
-            <b>Q：MANAGER 不能指派？</b><br />
-            A：重新登入後再試，並確認登入的是 <code>test</code> 伺服器且角色為 manager/admin。
-          </li>
-          <li>
-            <b>Q：STAFF 按鈕為灰色？</b><br />
-            A：這是權限限制，屬於正常行為。
-          </li>
-          <li>
-            <b>Q：手機畫面排版跑掉？</b><br />
-            A：請先強制重整（清除快取）後再重新開啟頁面。
-          </li>
+          <li data-zh="上方可填當日日期、預進、預退、住房率。" data-en="Top row lets you fill date, ARR, DEP and OCC.">上方可填當日日期、預進、預退、住房率。</li>
+          <li data-zh="置頂區會顯示已置頂且符合日期範圍的事項。" data-en="Pinned zone shows pinned tasks within current date range.">置頂區會顯示已置頂且符合日期範圍的事項。</li>
+          <li data-zh="可用主分類篩選縮小當日清單。" data-en="Use category filter to narrow the today list.">可用主分類篩選縮小當日清單。</li>
         </ul>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <b data-zh="當日事項總覽" data-en="Today Overview">當日事項總覽</b>
+            <img src="assets/tutorial/full/02-today-overview-kpi.png" data-alt-zh="當日事項 KPI 與清單" data-alt-en="Today KPI and list" alt="當日事項 KPI 與清單" />
+            <p data-zh="可即時查看今日待辦與時間排序。" data-en="View today tasks in real-time and time order.">可即時查看今日待辦與時間排序。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="置頂區" data-en="Pinned Zone">置頂區</b>
+            <img src="assets/tutorial/full/03-pinned-zone.png" data-alt-zh="置頂事項顯示區" data-alt-en="Pinned task display area" alt="置頂事項顯示區" />
+            <p data-zh="跨日時段置頂會在覆蓋日期持續顯示。" data-en="Pinned cross-day tasks remain visible on covered dates.">跨日時段置頂會在覆蓋日期持續顯示。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="s3" class="card">
+        <div class="section-head">
+          <h2 data-zh="3. 新增/修改與指派" data-en="3. Create/Edit & Assignment">3. 新增/修改與指派</h2>
+          <span class="pill" data-zh="manager/admin 可完整指派" data-en="Full assignment for manager/admin">manager/admin 可完整指派</span>
+        </div>
+        <p class="meta" data-zh="目的：建立待辦、設定時間、指定處理人。" data-en="Goal: Create tasks, set time ranges and assign owner.">目的：建立待辦、設定時間、指定處理人。</p>
+        <ol>
+          <li data-zh="先選主分類/子分類，再填事項名稱與交接說明。" data-en="Choose category/subcategory, then fill title and notes.">先選主分類/子分類，再填事項名稱與交接說明。</li>
+          <li data-zh="時間可填起日/起時至迄日/迄時；可按「立即」自動帶入目前時間。" data-en="Time supports start/end date-time; use NOW to fill current time quickly.">時間可填起日/起時至迄日/迄時；可按「立即」自動帶入目前時間。</li>
+          <li data-zh="可勾選全日、置頂，並指定給 staff 處理。" data-en="You can set all-day, pin, and assign to staff.">可勾選全日、置頂，並指定給 staff 處理。</li>
+        </ol>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <b data-zh="新增交接表單" data-en="Create Form">新增交接表單</b>
+            <img src="assets/tutorial/full/04-create-task-basic-fields.png" data-alt-zh="新增交接待辦表單" data-alt-en="Create handover form" alt="新增交接待辦表單" />
+            <p data-zh="新增與修改共用同一表單區塊。" data-en="Create and edit use the same form section.">新增與修改共用同一表單區塊。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="時間區間（含立即/全日）" data-en="Time Range (Now / All Day)">時間區間（含立即/全日）</b>
+            <img src="assets/tutorial/full/05-time-range-cross-day-now-allday.png" data-alt-zh="時間區間輸入與立即按鈕" data-alt-en="Time range inputs with NOW button" alt="時間區間輸入與立即按鈕" />
+            <p data-zh="跨日可設定兩段日期，彈性排程。" data-en="Cross-day scheduling is supported with start/end dates.">跨日可設定兩段日期，彈性排程。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="指派給" data-en="Assign To">指派給</b>
+            <img src="assets/tutorial/full/06-assign-to-user.png" data-alt-zh="指派帳號下拉選單" data-alt-en="Assignee dropdown list" alt="指派帳號下拉選單" />
+            <p data-zh="可指定處理人，未指定則為公用事項。" data-en="Assign to specific staff, or keep unassigned as shared task.">可指定處理人，未指定則為公用事項。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="s4" class="card">
+        <div class="section-head">
+          <h2 data-zh="4. 日期查詢與結果操作" data-en="4. Query & Result Actions">4. 日期查詢與結果操作</h2>
+          <span class="pill" data-zh="全部角色" data-en="All roles">全部角色</span>
+        </div>
+        <p class="meta" data-zh="目的：按日期/狀態/主分類/關鍵字快速定位事項。" data-en="Goal: Find tasks quickly by date/status/category/keyword.">目的：按日期/狀態/主分類/關鍵字快速定位事項。</p>
+        <ul>
+          <li data-zh="查詢條件：日期、狀態、主分類、關鍵字。" data-en="Filters: date, status, category, keyword.">查詢條件：日期、狀態、主分類、關鍵字。</li>
+          <li data-zh="結果可做完成、處理中、修改、取消、置頂、翻譯/顯示原文。" data-en="Result actions include done, in-progress, edit, cancel, pin, translate/show original.">結果可做完成、處理中、修改、取消、置頂、翻譯/顯示原文。</li>
+        </ul>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <b data-zh="查詢條件列" data-en="Query Filters">查詢條件列</b>
+            <img src="assets/tutorial/full/07-query-filters.png" data-alt-zh="日期查詢篩選列" data-alt-en="Date query filter row" alt="日期查詢篩選列" />
+            <p data-zh="先查詢再展開查詢結果。" data-en="Search first, then open query results.">先查詢再展開查詢結果。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="待處理操作列" data-en="Pending Task Actions">待處理操作列</b>
+            <img src="assets/tutorial/full/08-result-actions-pending.png" data-alt-zh="待處理事項按鈕群" data-alt-en="Pending task action buttons" alt="待處理事項按鈕群" />
+            <p data-zh="可直接執行完成、修改、置頂等動作。" data-en="Use action buttons directly from the row/card.">可直接執行完成、修改、置頂等動作。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="處理中/已完成混合結果" data-en="In-Progress / Done Mix">處理中/已完成混合結果</b>
+            <img src="assets/tutorial/full/09-result-actions-done-progress.png" data-alt-zh="查詢結果與狀態切換" data-alt-en="Query results with status transitions" alt="查詢結果與狀態切換" />
+            <p data-zh="狀態切換後可立即反映在查詢清單。" data-en="Status updates are reflected in query list immediately.">狀態切換後可立即反映在查詢清單。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="翻譯與原文切換" data-en="Translation / Original Toggle">翻譯與原文切換</b>
+            <img src="assets/tutorial/full/10-translation-show-original.png" data-alt-zh="顯示原文與翻譯按鈕" data-alt-en="Show original and translation actions" alt="顯示原文與翻譯按鈕" />
+            <p data-zh="翻譯品質不足時，系統會保留原文並提示。" data-en="If translation quality is low, system keeps original text with notice.">翻譯品質不足時，系統會保留原文並提示。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="s5" class="card">
+        <div class="section-head">
+          <h2 data-zh="5. 指派監視與 Team 狀態" data-en="5. Assignment Watch & Team Status">5. 指派監視與 Team 狀態</h2>
+          <span class="pill" data-zh="manager/admin" data-en="manager/admin">manager/admin</span>
+        </div>
+        <p class="meta" data-zh="目的：追蹤被指派事項、即時掌握 staff 在線狀態與工作量。" data-en="Goal: Track assigned tasks and monitor staff online status and workload.">目的：追蹤被指派事項、即時掌握 staff 在線狀態與工作量。</p>
+        <ul>
+          <li data-zh="指派監視會提示逾時 5 分鐘與 10 分鐘事項。" data-en="Assignment Watch alerts for tasks overdue by 5 and 10 minutes.">指派監視會提示逾時 5 分鐘與 10 分鐘事項。</li>
+          <li data-zh="Team 面板可看 staff 在線/閒置/離線與目前事項數。" data-en="Team panel shows online/idle/offline states and active task count.">Team 面板可看 staff 在線/閒置/離線與目前事項數。</li>
+          <li data-zh="點 staff 卡片可展開目前事項明細。" data-en="Tap staff card to expand assigned task details.">點 staff 卡片可展開目前事項明細。</li>
+        </ul>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <b data-zh="指派監視板塊" data-en="Assignment Watch Panel">指派監視板塊</b>
+            <img src="assets/tutorial/full/11-assignment-watch-panel.png" data-alt-zh="指派監視逾時列表" data-alt-en="Assignment watch overdue list" alt="指派監視逾時列表" />
+            <p data-zh="適合主管追單、避免逾時遺漏。" data-en="Useful for managers to prevent missed follow-ups.">適合主管追單、避免逾時遺漏。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="Team 面板（收合）" data-en="Team Panel (Collapsed)">Team 面板（收合）</b>
+            <img src="assets/tutorial/full/12-team-panel-collapsed.png" data-alt-zh="Team 狀態面板收合" data-alt-en="Team status panel collapsed" alt="Team 狀態面板收合" />
+            <p data-zh="右下角 Team 浮動按鈕可開啟。" data-en="Open via floating Team button at bottom-right.">右下角 Team 浮動按鈕可開啟。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="Team 面板（展開事項）" data-en="Team Panel (Expanded Tasks)">Team 面板（展開事項）</b>
+            <img src="assets/tutorial/full/13-team-panel-expanded-items.png" data-alt-zh="Team 卡片展開目前事項" data-alt-en="Expanded assigned items in Team panel" alt="Team 卡片展開目前事項" />
+            <p data-zh="點卡片可展開/收合，查看目前事項內容。" data-en="Click card to expand/collapse current assigned items.">點卡片可展開/收合，查看目前事項內容。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="s6" class="card">
+        <div class="section-head">
+          <h2 data-zh="6. 下一件待辦提醒與匯出" data-en="6. Upcoming Reminder & Export">6. 下一件待辦提醒與匯出</h2>
+          <span class="pill" data-zh="匯出限 manager/admin" data-en="Export for manager/admin">匯出限 manager/admin</span>
+        </div>
+        <p class="meta" data-zh="目的：接收到時提醒，並輸出 Word/Excel 報表。" data-en="Goal: Receive due reminders and export Word/Excel reports.">目的：接收到時提醒，並輸出 Word/Excel 報表。</p>
+        <ol>
+          <li data-zh="下一件待辦面板顯示 30 分鐘與 1 小時內事項。" data-en="Upcoming panel shows tasks within 30 min and 1 hour windows.">下一件待辦面板顯示 30 分鐘與 1 小時內事項。</li>
+          <li data-zh="可在匯出區選日期與狀態，一鍵生成 Word / Excel。" data-en="Use export panel to choose date/status and generate Word / Excel in one click.">可在匯出區選日期與狀態，一鍵生成 Word / Excel。</li>
+        </ol>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <b data-zh="下一件待辦提醒" data-en="Upcoming Reminder Panel">下一件待辦提醒</b>
+            <img src="assets/tutorial/full/14-upcoming-reminder-panel.png" data-alt-zh="下一件待辦提醒面板" data-alt-en="Upcoming reminder panel" alt="下一件待辦提醒面板" />
+            <p data-zh="通知開啟後，可配合手機推播提醒。" data-en="Enable notifications to pair with mobile push reminders.">通知開啟後，可配合手機推播提醒。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="Word / Excel 匯出" data-en="Word / Excel Export">Word / Excel 匯出</b>
+            <img src="assets/tutorial/full/15-export-word-excel.png" data-alt-zh="匯出區與生成按鈕" data-alt-en="Export panel and generate buttons" alt="匯出區與生成按鈕" />
+            <p data-zh="可依條件輸出 Daily Briefing 與未來待辦。" data-en="Export Daily Briefing and future tasks by filter condition.">可依條件輸出 Daily Briefing 與未來待辦。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="s7" class="card">
+        <div class="section-head">
+          <h2 data-zh="7. 手機操作與 PWA 安裝" data-en="7. Mobile Workflow & PWA Setup">7. 手機操作與 PWA 安裝</h2>
+          <span class="pill" data-zh="手機重點" data-en="Mobile focus">手機重點</span>
+        </div>
+        <p class="meta" data-zh="目的：提升手機操作效率，並啟用主畫面與通知。" data-en="Goal: Improve mobile efficiency and enable home-screen app with notifications.">目的：提升手機操作效率，並啟用主畫面與通知。</p>
+        <ul>
+          <li data-zh="手機底部有 TOP、下一件待辦、快速新增浮動按鈕。" data-en="Mobile includes floating TOP, Upcoming, and quick-add controls.">手機底部有 TOP、下一件待辦、快速新增浮動按鈕。</li>
+          <li data-zh="先安裝 PWA，再允許通知，可提升離線接收提醒機率。" data-en="Install PWA first, then allow notifications for better offline reminders.">先安裝 PWA，再允許通知，可提升離線接收提醒機率。</li>
+        </ul>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <b data-zh="手機浮動按鈕" data-en="Mobile Floating Buttons">手機浮動按鈕</b>
+            <img src="assets/tutorial/full/16-mobile-floating-buttons.png" data-alt-zh="手機版浮動按鈕操作" data-alt-en="Mobile floating button controls" alt="手機版浮動按鈕操作" />
+            <p data-zh="可快速跳新增、回頂部、看下一件待辦。" data-en="Quickly add task, scroll top, and open upcoming panel.">可快速跳新增、回頂部、看下一件待辦。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="iPhone 安裝 PWA" data-en="Install PWA on iPhone">iPhone 安裝 PWA</b>
+            <img src="assets/tutorial/full/17-pwa-install-ios.png" data-alt-zh="iPhone 加到主畫面步驟" data-alt-en="iPhone add-to-home-screen steps" alt="iPhone 加到主畫面步驟" />
+            <p data-zh="Safari 分享 → 加入主畫面。" data-en="Safari Share -> Add to Home Screen.">Safari 分享 → 加入主畫面。</p>
+          </article>
+          <article class="guide-card">
+            <b data-zh="Android 安裝與通知" data-en="Android Install & Notification">Android 安裝與通知</b>
+            <img src="assets/tutorial/full/18-pwa-install-android-notify.png" data-alt-zh="Android 安裝與通知授權" data-alt-en="Android install and notification permission" alt="Android 安裝與通知授權" />
+            <p data-zh="Chrome 安裝應用程式後，進系統點通知開啟。" data-en="Install app in Chrome, then enable notifications inside system.">Chrome 安裝應用程式後，進系統點通知開啟。</p>
+          </article>
+        </div>
+        <div class="warn" data-zh="提醒：若畫面與教學圖略有差異，先清快取後重整（Ctrl+F5 或重新開啟 PWA）。" data-en="Note: If screen differs from tutorial images, clear cache and hard refresh (Ctrl+F5 or reopen PWA).">
+          提醒：若畫面與教學圖略有差異，先清快取後重整（Ctrl+F5 或重新開啟 PWA）。
+        </div>
+      </section>
+
+      <section class="card">
+        <h3 data-zh="教學頁備註" data-en="Tutorial Notes">教學頁備註</h3>
+        <p class="footer-note" data-zh="本教學僅示範前台與 PWA 功能；後台帳號管理請使用 admin 後台頁面。" data-en="This guide covers frontend and PWA only; use admin backend page for account management.">
+          本教學僅示範前台與 PWA 功能；後台帳號管理請使用 admin 後台頁面。
+        </p>
       </section>
     </main>
+
+    <script>
+      (function () {
+        const root = document.documentElement;
+        const zhBtn = document.getElementById("lang-zh");
+        const enBtn = document.getElementById("lang-en");
+        const allTextNodes = Array.prototype.slice.call(document.querySelectorAll("[data-zh][data-en]"));
+        const allAltImages = Array.prototype.slice.call(document.querySelectorAll("img[data-alt-zh][data-alt-en]"));
+
+        function applyLanguage(lang) {
+          const normalized = lang === "en" ? "en" : "zh";
+          root.lang = normalized === "en" ? "en" : "zh-Hant";
+
+          allTextNodes.forEach(function (el) {
+            const value = normalized === "en" ? el.getAttribute("data-en") : el.getAttribute("data-zh");
+            if (value != null) {
+              el.textContent = value;
+            }
+          });
+
+          allAltImages.forEach(function (img) {
+            const altValue = normalized === "en" ? img.getAttribute("data-alt-en") : img.getAttribute("data-alt-zh");
+            if (altValue != null) {
+              img.alt = altValue;
+            }
+          });
+
+          zhBtn.classList.toggle("active", normalized === "zh");
+          enBtn.classList.toggle("active", normalized === "en");
+          try {
+            localStorage.setItem("pws_tutorial_lang", normalized);
+          } catch (error) {}
+        }
+
+        zhBtn.addEventListener("click", function () {
+          applyLanguage("zh");
+        });
+
+        enBtn.addEventListener("click", function () {
+          applyLanguage("en");
+        });
+
+        let initial = "zh";
+        try {
+          const stored = localStorage.getItem("pws_tutorial_lang");
+          if (stored === "en" || stored === "zh") {
+            initial = stored;
+          }
+        } catch (error) {}
+        applyLanguage(initial);
+      })();
+    </script>
   </body>
 </html>
